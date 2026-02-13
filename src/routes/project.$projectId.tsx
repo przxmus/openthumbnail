@@ -1,16 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import {
-  
-  
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from 'react'
-import type {ClipboardEvent as ReactClipboardEvent, DragEvent as ReactDragEvent} from 'react';
-
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ClipboardEvent, DragEvent } from 'react'
 import type { EditOperations, ModelCapability, OutputAsset, TimelineStep } from '@/types/workshop'
+
+import { m } from '@/paraglide/messages.js'
 import { AssetThumb } from '@/components/workshop/asset-thumb'
+import { ImageEditorModal } from '@/components/workshop/image-editor-modal'
+import { PersonaManagerModal } from '@/components/workshop/persona-manager-modal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -66,14 +62,16 @@ function getModelCapability(models: Array<ModelCapability>, modelId: string) {
 }
 
 function sliderClassName() {
-  return 'accent-primary h-2 w-full rounded-full'
+  return 'accent-primary h-2 w-full min-w-0 rounded-full overflow-hidden'
 }
 
 function ProjectWorkshopPage() {
   const navigate = useNavigate()
   const params = Route.useParams()
+
   const backupInputRef = useRef<HTMLInputElement | null>(null)
   const referenceInputRef = useRef<HTMLInputElement | null>(null)
+  const initializedProjectIdRef = useRef<string | null>(null)
 
   const {
     loading,
@@ -92,7 +90,11 @@ function ProjectWorkshopPage() {
     uploadReferenceFiles,
     importYoutubeThumbnail,
     createPersona,
+    renamePersonaItem,
+    addPersonaImages,
+    removePersonaImage,
     removePersona,
+    removeReferenceImage,
     generateStep,
     createEditStep,
     exportSingleAsset,
@@ -101,6 +103,7 @@ function ProjectWorkshopPage() {
     importBackup,
     cleanupCandidates,
     removeProjectAndRefresh,
+    missingReferenceIdsByStep,
   } = useWorkshopProject(params.projectId)
 
   const [modelId, setModelId] = useState('')
@@ -112,10 +115,10 @@ function ProjectWorkshopPage() {
   const [selectedReferenceIds, setSelectedReferenceIds] = useState<Array<string>>([])
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<Array<string>>([])
   const [youtubeUrl, setYoutubeUrl] = useState('')
-  const [personaName, setPersonaName] = useState('')
   const [editorSourceAssetId, setEditorSourceAssetId] = useState<string | null>(null)
-  const [editorOperations, setEditorOperations] =
-    useState<EditOperations>(DEFAULT_EDITOR_OPS)
+  const [editorOperations, setEditorOperations] = useState<EditOperations>(DEFAULT_EDITOR_OPS)
+  const [isEditorOpen, setIsEditorOpen] = useState(false)
+  const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false)
   const [remixOfStepId, setRemixOfStepId] = useState<string | undefined>(undefined)
   const [remixOfAssetId, setRemixOfAssetId] = useState<string | undefined>(undefined)
   const [cleanupStateVisible, setCleanupStateVisible] = useState(false)
@@ -141,20 +144,36 @@ function ProjectWorkshopPage() {
       return
     }
 
+    if (initializedProjectIdRef.current === project.id) {
+      return
+    }
+
+    initializedProjectIdRef.current = project.id
+
     setAspectRatio(project.defaultAspectRatio)
     setResolutionPreset(project.defaultResolution)
 
-    const fallbackModel =
-      project.defaultModel ?? settings.lastUsedModel ?? models.find((entry) => entry.availability === 'available')?.id
-
-    if (fallbackModel) {
-      setModelId(fallbackModel)
+    if (project.defaultModel) {
+      setModelId(project.defaultModel)
+    } else if (settings.lastUsedModel) {
+      setModelId(settings.lastUsedModel)
     }
 
     const draft = loadPromptDraft(project.id)
     setPrompt(draft.prompt)
     setNegativePrompt(draft.negativePrompt)
-  }, [models, project, settings.lastUsedModel])
+  }, [project, settings.lastUsedModel])
+
+  useEffect(() => {
+    if (modelId || !models.length) {
+      return
+    }
+
+    const available = models.find((entry) => entry.availability === 'available')
+    if (available) {
+      setModelId(available.id)
+    }
+  }, [modelId, models])
 
   useEffect(() => {
     if (!project) {
@@ -171,6 +190,22 @@ function ProjectWorkshopPage() {
     setOutputCount((current) => Math.max(1, Math.min(current, maxOutputs)))
   }, [maxOutputs])
 
+  useEffect(() => {
+    const allowed = new Set(referenceAssets.map((asset) => asset.id))
+    setSelectedReferenceIds((current) => {
+      const next = current.filter((assetId) => allowed.has(assetId))
+      return next.length === current.length ? current : next
+    })
+  }, [referenceAssets])
+
+  useEffect(() => {
+    const allowed = new Set(personas.map((persona) => persona.id))
+    setSelectedPersonaIds((current) => {
+      const next = current.filter((personaId) => allowed.has(personaId))
+      return next.length === current.length ? current : next
+    })
+  }, [personas])
+
   const unavailableModelSelected = modelCapability?.availability === 'unavailable'
 
   const onReferenceFiles = async (files: Array<File>) => {
@@ -182,13 +217,13 @@ function ProjectWorkshopPage() {
     await uploadReferenceFiles(imageFiles)
   }
 
-  const onDropReferences = async (event: ReactDragEvent<HTMLDivElement>) => {
+  const onDropReferences = async (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     const files = Array.from(event.dataTransfer.files)
     await onReferenceFiles(files)
   }
 
-  const onPasteReferences = async (event: ReactClipboardEvent<HTMLElement>) => {
+  const onPasteReferences = async (event: ClipboardEvent<HTMLElement>) => {
     const items = Array.from(event.clipboardData.items)
     const files = items
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
@@ -204,11 +239,7 @@ function ProjectWorkshopPage() {
   }
 
   const onGenerate = async () => {
-    if (!project) {
-      return
-    }
-
-    if (!modelId) {
+    if (!project || !modelId) {
       return
     }
 
@@ -235,26 +266,6 @@ function ProjectWorkshopPage() {
     setYoutubeUrl('')
   }
 
-  const onCreatePersona = async () => {
-    await createPersona(personaName, selectedReferenceIds)
-    setPersonaName('')
-  }
-
-  const onStartEdit = (assetId: string) => {
-    setEditorSourceAssetId(assetId)
-    setEditorOperations(DEFAULT_EDITOR_OPS)
-  }
-
-  const onApplyEdit = async () => {
-    if (!editorSourceAssetId) {
-      return
-    }
-
-    await createEditStep(editorSourceAssetId, editorOperations)
-    setEditorSourceAssetId(null)
-    setEditorOperations(DEFAULT_EDITOR_OPS)
-  }
-
   const onLoadCleanup = async () => {
     const rows = await cleanupCandidates()
     setCleanupRows(rows.map((entry) => ({ project: entry.project, bytes: entry.bytes })))
@@ -271,18 +282,22 @@ function ProjectWorkshopPage() {
     setAspectRatio(step.input.aspectRatio)
     setResolutionPreset(step.input.resolutionPreset)
     setOutputCount(step.input.outputCount)
-    setSelectedReferenceIds(
-      Array.from(new Set([outputAssetId, ...step.input.referenceAssetIds])),
-    )
+    setSelectedReferenceIds(Array.from(new Set([outputAssetId, ...step.input.referenceAssetIds])))
     setSelectedPersonaIds(step.input.personaIds)
     setRemixOfStepId(step.id)
     setRemixOfAssetId(outputAssetId)
   }
 
+  const openEditorForAsset = (assetId: string) => {
+    setEditorSourceAssetId(assetId)
+    setEditorOperations(DEFAULT_EDITOR_OPS)
+    setIsEditorOpen(true)
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <p className="text-muted-foreground text-sm">Loading workshop...</p>
+        <p className="text-muted-foreground text-sm">{m.loading_workshop()}</p>
       </main>
     )
   }
@@ -292,13 +307,11 @@ function ProjectWorkshopPage() {
       <main className="flex min-h-screen items-center justify-center">
         <Card>
           <CardHeader>
-            <CardTitle>Project not found</CardTitle>
-            <CardDescription>
-              The selected project does not exist in local storage.
-            </CardDescription>
+            <CardTitle>{m.project_not_found_title()}</CardTitle>
+            <CardDescription>{m.project_not_found_description()}</CardDescription>
           </CardHeader>
           <CardFooter>
-            <Button onClick={() => navigate({ to: '/' })}>Back to projects</Button>
+            <Button onClick={() => navigate({ to: '/' })}>{m.project_not_found_back()}</Button>
           </CardFooter>
         </Card>
       </main>
@@ -312,27 +325,25 @@ function ProjectWorkshopPage() {
         void onPasteReferences(event)
       }}
     >
-      <div className="mx-auto grid w-full max-w-[1600px] gap-6 px-4 py-6 md:px-8 xl:grid-cols-[420px_1fr]">
-        <section className="flex flex-col gap-4">
+      <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-6 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <section className="min-w-0 space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase tracking-[0.2em]">
-                    Project
-                  </p>
+                  <p className="text-muted-foreground text-xs uppercase tracking-[0.2em]">{m.project_label()}</p>
                   <CardTitle className="mt-1 text-xl">{project.name}</CardTitle>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => navigate({ to: '/' })}>
-                  Projects
+                  {m.projects_title()}
                 </Button>
               </div>
               <CardDescription>
-                Updated {formatDate(project.updatedAt)} · local-only timeline workspace
+                {m.project_updated({ date: formatDate(project.updatedAt) })}
               </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
-              <Label htmlFor="project-name">Project name</Label>
+              <Label htmlFor="project-name">{m.project_name_label()}</Label>
               <Input
                 id="project-name"
                 value={project.name}
@@ -342,14 +353,10 @@ function ProjectWorkshopPage() {
               />
               <div className="grid grid-cols-2 gap-2">
                 <Button size="sm" variant="outline" onClick={() => void exportBackup()}>
-                  Backup ZIP
+                  {m.project_backup_export()}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => backupInputRef.current?.click()}
-                >
-                  Restore ZIP
+                <Button size="sm" variant="outline" onClick={() => backupInputRef.current?.click()}>
+                  {m.project_backup_import()}
                 </Button>
               </div>
               <input
@@ -375,68 +382,66 @@ function ProjectWorkshopPage() {
                   await navigate({ to: '/' })
                 }}
               >
-                Delete project
+                {m.project_delete()}
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Generation</CardTitle>
-              <CardDescription>
-                Model-first flow. Fields unlock depending on model capabilities.
-              </CardDescription>
+              <CardTitle>{m.generation_title()}</CardTitle>
+              <CardDescription>{m.generation_description()}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
-              <Label htmlFor="model">Model</Label>
+            <CardContent className="grid min-w-0 gap-3 overflow-hidden">
+              <Label htmlFor="model">{m.generation_model_label()}</Label>
               <select
                 id="model"
                 value={modelId}
-                className="border-input bg-input/30 h-9 rounded-4xl border px-3 text-sm"
+                className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
                 onChange={(event) => setModelId(event.target.value)}
               >
-                <option value="">Select model</option>
+                <option value="">{m.generation_model_placeholder()}</option>
                 {models.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
-                    {model.availability === 'unavailable' ? ' (unavailable)' : ''}
+                    {model.availability === 'unavailable'
+                      ? ` ${m.generation_model_unavailable_suffix()}`
+                      : ''}
                   </option>
                 ))}
               </select>
 
               {unavailableModelSelected ? (
-                <p className="text-destructive text-xs">
-                  This model is unavailable. Pick another model before generating.
-                </p>
+                <p className="text-destructive text-xs">{m.generation_model_unavailable()}</p>
               ) : null}
 
-              <Label htmlFor="prompt">Prompt</Label>
+              <Label htmlFor="prompt">{m.generation_prompt_label()}</Label>
               <Textarea
                 id="prompt"
                 value={prompt}
-                placeholder="Describe the thumbnail you want to generate"
+                placeholder={m.generation_prompt_placeholder()}
                 onChange={(event) => setPrompt(event.target.value)}
               />
 
               {supportsNegativePrompt ? (
                 <>
-                  <Label htmlFor="negative-prompt">Negative prompt</Label>
+                  <Label htmlFor="negative-prompt">{m.generation_negative_label()}</Label>
                   <Textarea
                     id="negative-prompt"
                     value={negativePrompt}
-                    placeholder="What must not appear in the thumbnail"
+                    placeholder={m.generation_negative_placeholder()}
                     onChange={(event) => setNegativePrompt(event.target.value)}
                   />
                 </>
               ) : null}
 
-              <div className="grid grid-cols-3 gap-2">
-                <div className="grid gap-1">
-                  <Label htmlFor="ratio">Aspect ratio</Label>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-1">
+                  <Label htmlFor="ratio">{m.generation_ratio_label()}</Label>
                   <select
                     id="ratio"
                     value={aspectRatio}
-                    className="border-input bg-input/30 h-9 rounded-4xl border px-3 text-sm"
+                    className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
                     onChange={(event) => {
                       setAspectRatio(event.target.value as typeof aspectRatio)
                     }}
@@ -448,12 +453,12 @@ function ProjectWorkshopPage() {
                     ))}
                   </select>
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="resolution">Resolution</Label>
+                <div className="grid min-w-0 gap-1">
+                  <Label htmlFor="resolution">{m.generation_resolution_label()}</Label>
                   <select
                     id="resolution"
                     value={resolutionPreset}
-                    className="border-input bg-input/30 h-9 rounded-4xl border px-3 text-sm"
+                    className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
                     onChange={(event) => {
                       setResolutionPreset(event.target.value as typeof resolutionPreset)
                     }}
@@ -462,20 +467,21 @@ function ProjectWorkshopPage() {
                     <option value="1080p">1080p</option>
                   </select>
                 </div>
-                <div className="grid gap-1">
-                  <Label htmlFor="count">Outputs ({outputCount})</Label>
-                  <input
-                    id="count"
-                    type="range"
-                    min={1}
-                    max={maxOutputs}
-                    value={outputCount}
-                    className={sliderClassName()}
-                    onChange={(event) => {
-                      setOutputCount(Number(event.target.value))
-                    }}
-                  />
-                </div>
+              </div>
+
+              <div className="grid min-w-0 gap-1">
+                <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
+                <input
+                  id="count"
+                  type="range"
+                  min={1}
+                  max={maxOutputs}
+                  value={outputCount}
+                  className={sliderClassName()}
+                  onChange={(event) => {
+                    setOutputCount(Number(event.target.value))
+                  }}
+                />
               </div>
 
               <Button
@@ -484,12 +490,16 @@ function ProjectWorkshopPage() {
                   void onGenerate()
                 }}
               >
-                {busy ? 'Generating...' : remixOfStepId ? 'Generate Remix' : 'Generate'}
+                {busy
+                  ? m.generation_button_busy()
+                  : remixOfStepId
+                    ? m.generation_button_remix()
+                    : m.generation_button()}
               </Button>
 
               {remixOfStepId ? (
                 <div className="bg-muted/60 text-muted-foreground rounded-xl px-3 py-2 text-xs">
-                  Remix mode active from step {remixOfStepId}.{' '}
+                  {m.generation_remix_active({ stepId: remixOfStepId })}{' '}
                   <button
                     type="button"
                     className="text-foreground underline"
@@ -498,7 +508,7 @@ function ProjectWorkshopPage() {
                       setRemixOfAssetId(undefined)
                     }}
                   >
-                    Clear remix
+                    {m.generation_remix_clear()}
                   </button>
                 </div>
               ) : null}
@@ -507,10 +517,8 @@ function ProjectWorkshopPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>References & Personas</CardTitle>
-              <CardDescription>
-                Drag-drop, file picker, or clipboard paste. YouTube import adds highest thumbnail quality.
-              </CardDescription>
+              <CardTitle>{m.references_title()}</CardTitle>
+              <CardDescription>{m.references_description()}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-3">
               <div
@@ -522,14 +530,10 @@ function ProjectWorkshopPage() {
                   void onDropReferences(event)
                 }}
               >
-                <p className="text-sm">Drop reference images here or paste from clipboard.</p>
+                <p className="text-sm">{m.references_drop_hint()}</p>
                 <div className="mt-2 flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => referenceInputRef.current?.click()}
-                  >
-                    Select files
+                  <Button size="sm" variant="outline" onClick={() => referenceInputRef.current?.click()}>
+                    {m.references_select_files()}
                   </Button>
                   <input
                     ref={referenceInputRef}
@@ -546,32 +550,39 @@ function ProjectWorkshopPage() {
                 </div>
               </div>
 
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                 <Input
-                  placeholder="YouTube URL (watch / youtu.be / shorts)"
+                  placeholder={m.references_youtube_placeholder()}
                   value={youtubeUrl}
                   onChange={(event) => setYoutubeUrl(event.target.value)}
                 />
                 <Button size="sm" variant="outline" onClick={() => void onImportYoutube()}>
-                  Import thumbnail
+                  {m.references_youtube_import()}
                 </Button>
               </div>
 
               {supportsReferences ? null : (
-                <p className="text-muted-foreground text-xs">
-                  Current model does not support reference images. You can still manage library assets.
-                </p>
+                <p className="text-muted-foreground text-xs">{m.references_model_unsupported()}</p>
               )}
 
-              <div className="max-h-64 space-y-2 overflow-auto pr-1">
+              <div className="max-h-72 min-w-0 space-y-2 overflow-auto pr-1">
+                {referenceAssets.length === 0 ? (
+                  <p className="text-muted-foreground rounded-xl border border-dashed border-border/70 p-3 text-sm">
+                    {m.references_empty()}
+                  </p>
+                ) : null}
+
                 {referenceAssets.map((asset) => {
                   const selected = selectedReferenceIds.includes(asset.id)
+
                   return (
                     <button
                       key={asset.id}
                       type="button"
-                      className={`ring-border grid w-full grid-cols-[84px_1fr] gap-3 rounded-2xl p-2 text-left ring-1 ${
-                        selected ? 'bg-primary/8 ring-primary' : 'bg-card'
+                      className={`grid w-full min-w-0 grid-cols-[84px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border p-2 text-left ${
+                        selected
+                          ? 'border-primary bg-primary/10'
+                          : 'border-border/70 bg-card hover:border-primary/50'
                       }`}
                       onClick={() => {
                         setSelectedReferenceIds((current) =>
@@ -582,256 +593,75 @@ function ProjectWorkshopPage() {
                       }}
                     >
                       <div className="h-16 w-20 overflow-hidden rounded-xl">
-                        <AssetThumb asset={asset} alt="reference" />
+                        <AssetThumb asset={asset} alt={m.references_title()} />
                       </div>
-                      <div className="flex flex-col justify-center text-xs">
-                        <p className="font-medium">{asset.kind}</p>
-                        <p className="text-muted-foreground">{formatDate(asset.createdAt)}</p>
-                        <p className="text-muted-foreground">{asset.width}x{asset.height}</p>
+                      <div className="min-w-0 text-xs">
+                        <p className="truncate font-medium">{asset.kind}</p>
+                        <p className="text-muted-foreground truncate">{formatDate(asset.createdAt)}</p>
+                        <p className="text-muted-foreground truncate">
+                          {asset.width}x{asset.height}
+                        </p>
                       </div>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelectedReferenceIds((current) =>
+                            current.filter((id) => id !== asset.id),
+                          )
+                          void removeReferenceImage(asset.id)
+                        }}
+                      >
+                        {m.references_delete()}
+                      </Button>
                     </button>
                   )
                 })}
               </div>
 
-              <div className="border-border/60 rounded-2xl border p-3">
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                  <Input
-                    placeholder="Persona name"
-                    value={personaName}
-                    onChange={(event) => setPersonaName(event.target.value)}
-                  />
-                  <Button size="sm" variant="outline" onClick={() => void onCreatePersona()}>
-                    Save persona
-                  </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/70 p-3">
+                <div>
+                  <p className="font-medium">{m.personas_title()}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {m.personas_selected({ count: String(selectedPersonaIds.length) })}
+                  </p>
                 </div>
-                <p className="text-muted-foreground mt-2 text-xs">
-                  Persona uses currently selected references (max 4).
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                {personas.map((persona) => {
-                  const selected = selectedPersonaIds.includes(persona.id)
-                  return (
-                    <div
-                      key={persona.id}
-                      className={`ring-border flex items-center justify-between rounded-xl px-3 py-2 ring-1 ${
-                        selected ? 'bg-primary/8 ring-primary' : 'bg-card'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        className="flex-1 text-left"
-                        onClick={() => {
-                          setSelectedPersonaIds((current) =>
-                            current.includes(persona.id)
-                              ? current.filter((id) => id !== persona.id)
-                              : [...current, persona.id],
-                          )
-                        }}
-                      >
-                        <p className="text-sm font-medium">{persona.name}</p>
-                        <p className="text-muted-foreground text-xs">
-                          {persona.referenceAssetIds.length} references
-                        </p>
-                      </button>
-                      <Button
-                        size="xs"
-                        variant="destructive"
-                        onClick={() => {
-                          void removePersona(persona.id)
-                        }}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  )
-                })}
+                <Button size="sm" variant="outline" onClick={() => setIsPersonaModalOpen(true)}>
+                  {m.personas_open_manager()}
+                </Button>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Editor</CardTitle>
-              <CardDescription>
-                Apply basic crop and tone adjustments as timeline edit steps.
-              </CardDescription>
+              <CardTitle>{m.editor_title()}</CardTitle>
+              <CardDescription>{m.editor_description()}</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-3">
-              {selectedEditorAsset ? (
-                <div className="h-36 overflow-hidden rounded-xl">
-                  <AssetThumb asset={selectedEditorAsset} alt="editing source" />
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-sm">
-                  Select “Edit” on any generated output in timeline.
-                </p>
-              )}
-
-              <div className="grid gap-3">
-                <Label>Crop X ({editorOperations.cropX}%)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={99}
-                  value={editorOperations.cropX}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      cropX: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Crop Y ({editorOperations.cropY}%)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={99}
-                  value={editorOperations.cropY}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      cropY: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Crop Width ({editorOperations.cropWidth}%)</Label>
-                <input
-                  type="range"
-                  min={1}
-                  max={100}
-                  value={editorOperations.cropWidth}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      cropWidth: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Crop Height ({editorOperations.cropHeight}%)</Label>
-                <input
-                  type="range"
-                  min={1}
-                  max={100}
-                  value={editorOperations.cropHeight}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      cropHeight: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Rotate ({editorOperations.rotate}°)</Label>
-                <input
-                  type="range"
-                  min={-180}
-                  max={180}
-                  value={editorOperations.rotate}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      rotate: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Brightness ({editorOperations.brightness}%)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={200}
-                  value={editorOperations.brightness}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      brightness: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Contrast ({editorOperations.contrast}%)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={200}
-                  value={editorOperations.contrast}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      contrast: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Saturation ({editorOperations.saturation}%)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={300}
-                  value={editorOperations.saturation}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      saturation: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Blur ({editorOperations.blur}px)</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={12}
-                  value={editorOperations.blur}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      blur: Number(event.target.value),
-                    }))
-                  }
-                />
-                <Label>Sharpen ({editorOperations.sharpen})</Label>
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={editorOperations.sharpen}
-                  className={sliderClassName()}
-                  onChange={(event) =>
-                    setEditorOperations((current) => ({
-                      ...current,
-                      sharpen: Number(event.target.value),
-                    }))
-                  }
-                />
-              </div>
-
+            <CardContent className="grid gap-2">
               <Button
-                disabled={!selectedEditorAsset || busy}
+                variant="outline"
+                disabled={!outputAssets.length}
                 onClick={() => {
-                  void onApplyEdit()
+                  const latest = outputAssets[outputAssets.length - 1]
+                  openEditorForAsset(latest.id)
                 }}
               >
-                Apply edit step
+                {m.editor_open()}
               </Button>
+              <p className="text-muted-foreground text-sm">{m.editor_no_source()}</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Exports</CardTitle>
-              <CardDescription>Final format is JPG; batch exports as ZIP.</CardDescription>
+              <CardTitle>{m.exports_title()}</CardTitle>
+              <CardDescription>{m.exports_description()}</CardDescription>
             </CardHeader>
             <CardContent className="grid gap-2">
               <Button variant="outline" onClick={() => void exportProjectBatch()}>
-                Export batch ZIP ({outputAssets.length})
+                {m.exports_batch({ count: String(outputAssets.length) })}
               </Button>
             </CardContent>
           </Card>
@@ -839,7 +669,7 @@ function ProjectWorkshopPage() {
           {quotaState ? (
             <Card className="border-destructive/50">
               <CardHeader>
-                <CardTitle className="text-destructive">Storage quota exceeded</CardTitle>
+                <CardTitle className="text-destructive">{m.quota_title()}</CardTitle>
                 <CardDescription>{quotaState.reason}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-2">
@@ -850,7 +680,7 @@ function ProjectWorkshopPage() {
                     void onLoadCleanup()
                   }}
                 >
-                  {cleanupStateVisible ? 'Hide cleanup wizard' : 'Open cleanup wizard'}
+                  {cleanupStateVisible ? m.quota_close() : m.quota_open()}
                 </Button>
 
                 {cleanupStateVisible ? (
@@ -863,7 +693,7 @@ function ProjectWorkshopPage() {
                         <div>
                           <p className="text-sm font-medium">{row.project.name}</p>
                           <p className="text-muted-foreground text-xs">
-                            Estimated size {bytesToSize(row.bytes)}
+                            {m.quota_estimated_size({ size: bytesToSize(row.bytes) })}
                           </p>
                         </div>
                         <Button
@@ -874,7 +704,7 @@ function ProjectWorkshopPage() {
                             await onLoadCleanup()
                           }}
                         >
-                          Delete
+                          {m.projects_delete()}
                         </Button>
                       </div>
                     ))}
@@ -891,18 +721,16 @@ function ProjectWorkshopPage() {
           ) : null}
         </section>
 
-        <section>
+        <section className="min-w-0">
           <Card className="min-h-[80vh]">
             <CardHeader>
-              <CardTitle>Timeline</CardTitle>
-              <CardDescription>
-                Prompt/output/edit history for this project. Top is oldest step, newest at bottom.
-              </CardDescription>
+              <CardTitle>{m.timeline_title()}</CardTitle>
+              <CardDescription>{m.timeline_description()}</CardDescription>
             </CardHeader>
             <CardContent>
               {steps.length === 0 ? (
                 <div className="bg-muted/30 text-muted-foreground rounded-2xl p-6 text-sm">
-                  Timeline is empty. Generate your first thumbnail.
+                  {m.timeline_empty()}
                 </div>
               ) : (
                 <ol className="relative space-y-4 border-l border-dashed pl-5">
@@ -914,26 +742,52 @@ function ProjectWorkshopPage() {
                         <Card size="sm" className="gap-4">
                           <CardHeader>
                             <div className="flex items-center justify-between gap-2">
-                              <CardTitle className="text-base">Generation step</CardTitle>
+                              <CardTitle className="text-base">{m.timeline_generation_step()}</CardTitle>
                               <Badge>{formatDate(step.createdAt)}</Badge>
                             </div>
                             <CardDescription>
-                              Model {step.input.modelId} · {step.input.resolutionPreset} ·{' '}
-                              {step.input.aspectRatio}
+                              {m.timeline_model_line({
+                                model: step.input.modelId,
+                                resolution: step.input.resolutionPreset,
+                                ratio: step.input.aspectRatio,
+                              })}
                             </CardDescription>
                           </CardHeader>
-                          <CardContent className="space-y-3">
+                          <CardContent className="space-y-3 min-w-0 overflow-hidden">
                             <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
-                              <p className="text-zinc-400">Prompt</p>
+                              <p className="text-zinc-400">{m.timeline_prompt()}</p>
                               <p className="mt-1 whitespace-pre-wrap">{step.input.prompt}</p>
                             </div>
 
                             {step.input.negativePrompt ? (
                               <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
-                                <p className="text-zinc-500">Negative prompt</p>
+                                <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
                                 <p className="mt-1 whitespace-pre-wrap">{step.input.negativePrompt}</p>
                               </div>
                             ) : null}
+
+                            <div className="flex min-w-0 flex-wrap gap-2">
+                              <span className="text-muted-foreground text-xs">
+                                {m.timeline_references_label()}:
+                              </span>
+                              {step.input.referenceAssetIds.length === 0 ? (
+                                <Badge variant="outline">{m.timeline_references_none()}</Badge>
+                              ) : (
+                                step.input.referenceAssetIds.map((assetId) => {
+                                  const missingReferences = missingReferenceIdsByStep.get(step.id)
+                                  const isDeleted = missingReferences
+                                    ? missingReferences.includes(assetId)
+                                    : !assetsMap.has(assetId)
+                                  return (
+                                    <Badge key={assetId} variant={isDeleted ? 'destructive' : 'outline'}>
+                                      {isDeleted
+                                        ? m.references_deleted_badge()
+                                        : assetId.slice(0, 8)}
+                                    </Badge>
+                                  )
+                                })
+                              )}
+                            </div>
 
                             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                               {step.outputs.map((output) => {
@@ -945,10 +799,10 @@ function ProjectWorkshopPage() {
                                 return (
                                   <div
                                     key={output.assetId}
-                                    className="ring-border/60 overflow-hidden rounded-2xl ring-1"
+                                    className="border-border/60 overflow-hidden rounded-2xl border"
                                   >
                                     <div className="h-44 w-full overflow-hidden">
-                                      <AssetThumb asset={asset} alt="generated thumbnail" />
+                                      <AssetThumb asset={asset} alt={m.timeline_output()} />
                                     </div>
                                     <div className="space-y-2 p-3">
                                       <div className="flex flex-wrap gap-2">
@@ -957,21 +811,21 @@ function ProjectWorkshopPage() {
                                           variant="outline"
                                           onClick={() => onRemixFrom(step, output.assetId)}
                                         >
-                                          Remix
+                                          {m.timeline_action_remix()}
                                         </Button>
                                         <Button
                                           size="xs"
                                           variant="outline"
-                                          onClick={() => onStartEdit(output.assetId)}
+                                          onClick={() => openEditorForAsset(output.assetId)}
                                         >
-                                          Edit
+                                          {m.timeline_action_edit()}
                                         </Button>
                                         <Button
                                           size="xs"
                                           variant="outline"
                                           onClick={() => void exportSingleAsset(output.assetId)}
                                         >
-                                          JPG
+                                          {m.timeline_action_jpg()}
                                         </Button>
                                       </div>
                                       <p className="text-muted-foreground text-xs">
@@ -985,13 +839,29 @@ function ProjectWorkshopPage() {
 
                             {settings.nerdMode ? (
                               <div className="bg-muted/30 rounded-xl p-3 text-xs">
-                                <p>Step id: {step.id}</p>
-                                <p>Status: {step.status}</p>
-                                <p>References: {step.input.referenceAssetIds.length}</p>
-                                <p>Personas: {step.input.personaIds.length}</p>
-                                <p>Requested outputs: {step.input.outputCount}</p>
+                                <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
+                                <p>{m.timeline_nerd_status({ status: step.status })}</p>
+                                <p>
+                                  {m.timeline_nerd_references({
+                                    count: String(step.input.referenceAssetIds.length),
+                                  })}
+                                </p>
+                                <p>
+                                  {m.timeline_nerd_personas({
+                                    count: String(step.input.personaIds.length),
+                                  })}
+                                </p>
+                                <p>
+                                  {m.timeline_nerd_requested_outputs({
+                                    count: String(step.input.outputCount),
+                                  })}
+                                </p>
                                 {step.trace?.requestAt ? (
-                                  <p>Request started: {formatDate(step.trace.requestAt)}</p>
+                                  <p>
+                                    {m.timeline_nerd_request_started({
+                                      date: formatDate(step.trace.requestAt),
+                                    })}
+                                  </p>
                                 ) : null}
                               </div>
                             ) : null}
@@ -1001,40 +871,38 @@ function ProjectWorkshopPage() {
                         <Card size="sm" className="gap-4">
                           <CardHeader>
                             <div className="flex items-center justify-between gap-2">
-                              <CardTitle className="text-base">Edit step</CardTitle>
+                              <CardTitle className="text-base">{m.timeline_edit_step()}</CardTitle>
                               <Badge>{formatDate(step.createdAt)}</Badge>
                             </div>
-                            <CardDescription>
-                              Crop / rotate / color adjustments saved as separate step.
-                            </CardDescription>
+                            <CardDescription>{m.timeline_edit_description()}</CardDescription>
                           </CardHeader>
                           <CardContent className="grid gap-3 md:grid-cols-2">
                             <div className="space-y-2">
-                              <p className="text-xs font-medium">Source</p>
+                              <p className="text-xs font-medium">{m.timeline_source()}</p>
                               <div className="h-40 overflow-hidden rounded-xl">
                                 {assetsMap.get(step.sourceAssetId) ? (
                                   <AssetThumb
                                     asset={assetsMap.get(step.sourceAssetId) as OutputAsset}
-                                    alt="source image"
+                                    alt={m.timeline_source()}
                                   />
                                 ) : (
                                   <div className="bg-muted text-muted-foreground flex h-full items-center justify-center rounded-xl text-xs">
-                                    Missing source
+                                    {m.timeline_missing_source()}
                                   </div>
                                 )}
                               </div>
                             </div>
                             <div className="space-y-2">
-                              <p className="text-xs font-medium">Output</p>
+                              <p className="text-xs font-medium">{m.timeline_output()}</p>
                               <div className="h-40 overflow-hidden rounded-xl">
                                 {assetsMap.get(step.outputAssetId) ? (
                                   <AssetThumb
                                     asset={assetsMap.get(step.outputAssetId) as OutputAsset}
-                                    alt="edited image"
+                                    alt={m.timeline_output()}
                                   />
                                 ) : (
                                   <div className="bg-muted text-muted-foreground flex h-full items-center justify-center rounded-xl text-xs">
-                                    Missing output
+                                    {m.timeline_missing_output()}
                                   </div>
                                 )}
                               </div>
@@ -1044,19 +912,35 @@ function ProjectWorkshopPage() {
                                   variant="outline"
                                   onClick={() => void exportSingleAsset(step.outputAssetId)}
                                 >
-                                  Export JPG
+                                  {m.timeline_export_jpg()}
                                 </Button>
                               </div>
                             </div>
                             {settings.nerdMode ? (
                               <div className="bg-muted/30 col-span-full rounded-xl p-3 text-xs">
-                                <p>Step id: {step.id}</p>
-                                <p>Rotate: {step.operations.rotate}</p>
-                                <p>Brightness: {step.operations.brightness}</p>
-                                <p>Contrast: {step.operations.contrast}</p>
-                                <p>Saturation: {step.operations.saturation}</p>
-                                <p>Blur: {step.operations.blur}</p>
-                                <p>Sharpen: {step.operations.sharpen}</p>
+                                <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
+                                <p>{m.timeline_nerd_rotate({ value: String(step.operations.rotate) })}</p>
+                                <p>
+                                  {m.timeline_nerd_brightness({
+                                    value: String(step.operations.brightness),
+                                  })}
+                                </p>
+                                <p>
+                                  {m.timeline_nerd_contrast({
+                                    value: String(step.operations.contrast),
+                                  })}
+                                </p>
+                                <p>
+                                  {m.timeline_nerd_saturation({
+                                    value: String(step.operations.saturation),
+                                  })}
+                                </p>
+                                <p>{m.timeline_nerd_blur({ value: String(step.operations.blur) })}</p>
+                                <p>
+                                  {m.timeline_nerd_sharpen({
+                                    value: String(step.operations.sharpen),
+                                  })}
+                                </p>
                               </div>
                             ) : null}
                           </CardContent>
@@ -1070,6 +954,59 @@ function ProjectWorkshopPage() {
           </Card>
         </section>
       </div>
+
+      <ImageEditorModal
+        open={isEditorOpen}
+        sourceAsset={selectedEditorAsset}
+        initialOperations={editorOperations}
+        busy={busy}
+        onCancel={() => {
+          setIsEditorOpen(false)
+          setEditorSourceAssetId(null)
+          setEditorOperations(DEFAULT_EDITOR_OPS)
+        }}
+        onApply={async (operations) => {
+          if (!editorSourceAssetId) {
+            return
+          }
+
+          await createEditStep(editorSourceAssetId, operations)
+          setIsEditorOpen(false)
+          setEditorSourceAssetId(null)
+          setEditorOperations(DEFAULT_EDITOR_OPS)
+        }}
+      />
+
+      <PersonaManagerModal
+        open={isPersonaModalOpen}
+        personas={personas}
+        assetsMap={assetsMap}
+        selectedPersonaIds={selectedPersonaIds}
+        onClose={() => setIsPersonaModalOpen(false)}
+        onCreatePersona={async (name) => {
+          await createPersona(name)
+        }}
+        onRenamePersona={async (personaId, name) => {
+          await renamePersonaItem(personaId, name)
+        }}
+        onDeletePersona={async (personaId) => {
+          setSelectedPersonaIds((current) => current.filter((id) => id !== personaId))
+          await removePersona(personaId)
+        }}
+        onAddPersonaImages={async (personaId, files) => {
+          await addPersonaImages(personaId, files)
+        }}
+        onRemovePersonaImage={async (assetId) => {
+          await removePersonaImage(assetId)
+        }}
+        onToggleSelectedPersona={(personaId) => {
+          setSelectedPersonaIds((current) =>
+            current.includes(personaId)
+              ? current.filter((id) => id !== personaId)
+              : [...current, personaId],
+          )
+        }}
+      />
     </main>
   )
 }

@@ -190,6 +190,52 @@ export async function getAsset(assetId: string) {
   return db.get('assets', assetId)
 }
 
+export async function deleteReferenceAsset(assetId: string) {
+  const db = await getDb()
+  const asset = await db.get('assets', assetId)
+
+  if (!asset) {
+    return
+  }
+
+  if (asset.kind !== 'reference' && asset.kind !== 'imported') {
+    throw new Error('Asset is not a project reference image')
+  }
+
+  await db.delete('assets', assetId)
+}
+
+export async function deletePersonaReferenceAsset(assetId: string) {
+  const db = await getDb()
+  const asset = await db.get('assets', assetId)
+
+  if (!asset) {
+    return
+  }
+
+  if (asset.kind !== 'persona') {
+    throw new Error('Asset is not a persona reference image')
+  }
+
+  const tx = db.transaction(['assets', 'personas'], 'readwrite')
+  await tx.objectStore('assets').delete(assetId)
+
+  const personas = await tx.objectStore('personas').getAll()
+  for (const persona of personas) {
+    if (!persona.referenceAssetIds.includes(assetId)) {
+      continue
+    }
+
+    await tx.objectStore('personas').put({
+      ...persona,
+      referenceAssetIds: persona.referenceAssetIds.filter((id) => id !== assetId),
+      updatedAt: Date.now(),
+    })
+  }
+
+  await tx.done
+}
+
 export async function getAssets(assetIds: Array<string>) {
   const db = await getDb()
   const assets = await Promise.all(assetIds.map((assetId) => db.get('assets', assetId)))
@@ -257,6 +303,50 @@ export async function upsertPersona(persona: Persona) {
   const db = await getDb()
   await db.put('personas', persona)
   return persona
+}
+
+export async function getPersona(personaId: string) {
+  const db = await getDb()
+  return db.get('personas', personaId)
+}
+
+export async function renamePersona(personaId: string, name: string) {
+  const db = await getDb()
+  const persona = await db.get('personas', personaId)
+
+  if (!persona) {
+    throw new Error('Persona not found')
+  }
+
+  const nextPersona = {
+    ...persona,
+    name,
+    updatedAt: Date.now(),
+  }
+
+  await db.put('personas', nextPersona)
+  return nextPersona
+}
+
+export async function setPersonaReferenceAssetIds(
+  personaId: string,
+  referenceAssetIds: Array<string>,
+) {
+  const db = await getDb()
+  const persona = await db.get('personas', personaId)
+
+  if (!persona) {
+    throw new Error('Persona not found')
+  }
+
+  const nextPersona = {
+    ...persona,
+    referenceAssetIds,
+    updatedAt: Date.now(),
+  }
+
+  await db.put('personas', nextPersona)
+  return nextPersona
 }
 
 export async function deletePersona(personaId: string) {

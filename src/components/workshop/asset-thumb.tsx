@@ -1,4 +1,5 @@
 import type { OutputAsset } from '@/types/workshop'
+import { m } from '@/paraglide/messages.js'
 import { useObjectUrl } from '@/lib/hooks/use-object-url'
 import { cn } from '@/lib/utils'
 
@@ -19,7 +20,7 @@ export function AssetThumb({ asset, alt, className }: AssetThumbProps) {
           className,
         )}
       >
-        Preview unavailable
+        {m.asset_preview_unavailable()}
       </div>
     )
   }

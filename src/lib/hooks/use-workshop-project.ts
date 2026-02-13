@@ -26,15 +26,20 @@ import {
   collectCleanupCandidates,
   collectUsageForPersona,
   deletePersona,
+  deletePersonaReferenceAsset,
   deleteProject,
+  deleteReferenceAsset,
   exportProjectBackup,
   getAsset,
   getAssets,
+  getPersona,
   getProjectAssets,
   getProjectById,
   getProjectSteps,
   importProjectBackup,
   listPersonas,
+  renamePersona,
+  setPersonaReferenceAssetIds,
   touchProject,
   updateProject,
   upsertAsset,
@@ -244,44 +249,16 @@ export function useWorkshopProject(projectId: string) {
   )
 
   const createPersona = useCallback(
-    async (name: string, referenceAssetIds: Array<string>) => {
+    async (name: string) => {
       const normalizedName = name.trim()
       if (!normalizedName) {
         throw new Error('Persona name cannot be empty')
       }
 
-      const uniqueReferences = [...new Set(referenceAssetIds)].slice(0, MAX_PERSONA_REFERENCES)
-
-      if (!uniqueReferences.length) {
-        throw new Error('Persona needs at least one reference')
-      }
-
-      const sourceAssets = await getAssets(uniqueReferences)
-      const personaAssetIds: Array<string> = []
-
-      for (const asset of sourceAssets.slice(0, MAX_PERSONA_REFERENCES)) {
-        if (asset.scope === 'global' && asset.kind === 'persona') {
-          personaAssetIds.push(asset.id)
-          continue
-        }
-
-        const globalAsset: OutputAsset = {
-          ...asset,
-          id: newId('asset'),
-          scope: 'global',
-          projectId: null,
-          kind: 'persona',
-          createdAt: Date.now(),
-        }
-
-        await upsertAsset(globalAsset)
-        personaAssetIds.push(globalAsset.id)
-      }
-
       const persona: Persona = {
         id: newId('persona'),
         name: normalizedName,
-        referenceAssetIds: personaAssetIds,
+        referenceAssetIds: [],
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }
@@ -289,6 +266,74 @@ export function useWorkshopProject(projectId: string) {
       await upsertPersona(persona)
       await reload()
       return persona
+    },
+    [reload],
+  )
+
+  const renamePersonaItem = useCallback(
+    async (personaId: string, nextName: string) => {
+      const normalized = nextName.trim()
+      if (!normalized) {
+        throw new Error('Persona name cannot be empty')
+      }
+
+      await renamePersona(personaId, normalized)
+      await reload()
+    },
+    [reload],
+  )
+
+  const addPersonaImages = useCallback(
+    async (personaId: string, files: Array<File>) => {
+      if (!files.length) {
+        return
+      }
+
+      const persona = await getPersona(personaId)
+      if (!persona) {
+        throw new Error('Persona not found')
+      }
+
+      const remainingSlots = MAX_PERSONA_REFERENCES - persona.referenceAssetIds.length
+      if (remainingSlots <= 0) {
+        throw new Error('Persona reached the limit of 4 images')
+      }
+
+      const selected = files.slice(0, remainingSlots)
+      const newAssetIds: Array<string> = []
+
+      for (const file of selected) {
+        const dimensions = await readImageDimensions(file)
+        const asset: OutputAsset = {
+          id: newId('asset'),
+          scope: 'global',
+          projectId: null,
+          kind: 'persona',
+          createdAt: Date.now(),
+          mimeType: file.type || 'image/png',
+          width: dimensions.width,
+          height: dimensions.height,
+          blob: file,
+        }
+
+        await upsertAsset(asset)
+        newAssetIds.push(asset.id)
+      }
+
+      await setPersonaReferenceAssetIds(personaId, [
+        ...persona.referenceAssetIds,
+        ...newAssetIds,
+      ])
+
+      await reload()
+    },
+    [reload],
+  )
+
+  const removePersonaImage = useCallback(
+    async (assetId: string) => {
+      await deletePersonaReferenceAsset(assetId)
+      await reload()
     },
     [reload],
   )
@@ -562,6 +607,34 @@ export function useWorkshopProject(projectId: string) {
     return collectUsageForPersona(persona)
   }, [])
 
+  const removeReferenceImage = useCallback(
+    async (assetId: string) => {
+      await deleteReferenceAsset(assetId)
+      await reload()
+    },
+    [reload],
+  )
+
+  const missingReferenceIdsByStep = useMemo(() => {
+    const missingByStep = new Map<string, Array<string>>()
+
+    for (const step of steps) {
+      if (step.type !== 'generation') {
+        continue
+      }
+
+      const missing = step.input.referenceAssetIds.filter(
+        (assetId) => !assetsMap.has(assetId),
+      )
+
+      if (missing.length) {
+        missingByStep.set(step.id, missing)
+      }
+    }
+
+    return missingByStep
+  }, [assetsMap, steps])
+
   return {
     loading,
     busy,
@@ -581,7 +654,11 @@ export function useWorkshopProject(projectId: string) {
     uploadReferenceFiles,
     importYoutubeThumbnail,
     createPersona,
+    renamePersonaItem,
+    addPersonaImages,
+    removePersonaImage,
     removePersona,
+    removeReferenceImage,
     generateStep,
     createEditStep,
     exportSingleAsset,
@@ -591,5 +668,6 @@ export function useWorkshopProject(projectId: string) {
     cleanupCandidates,
     removeProjectAndRefresh,
     personaUsage,
+    missingReferenceIdsByStep,
   }
 }

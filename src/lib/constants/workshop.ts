@@ -1,8 +1,10 @@
 import type {
   AppSettings,
+  AppLocale,
   AspectRatio,
   ResolutionPreset,
   ResolutionPresetConfig,
+  ThemeMode,
 } from '@/types/workshop'
 
 export const WORKSHOP_SCHEMA_VERSION = 1
@@ -16,10 +18,15 @@ export const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: '',
   nerdMode: false,
   lastUsedModel: null,
+  themeMode: 'system',
+  locale: 'en',
   uiPreferences: {
     showRightPanel: true,
   },
 }
+
+export const APP_LOCALES: Array<AppLocale> = ['en', 'pl']
+export const THEME_MODES: Array<ThemeMode> = ['light', 'dark', 'system']
 
 export const DEFAULT_PROJECT_NAME = 'Untitled Project'
 export const DEFAULT_ASPECT_RATIO: AspectRatio = '16:9'

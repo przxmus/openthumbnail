@@ -2,6 +2,10 @@ export type AspectRatio = '1:1' | '4:3' | '16:9' | '9:16'
 
 export type ResolutionPreset = '720p' | '1080p'
 
+export type ThemeMode = 'light' | 'dark' | 'system'
+
+export type AppLocale = 'en' | 'pl'
+
 export type TimelineStepType = 'generation' | 'edit'
 
 export type AssetScope = 'project' | 'global'
@@ -134,6 +138,8 @@ export interface AppSettings {
   openRouterApiKey: string
   nerdMode: boolean
   lastUsedModel: string | null
+  themeMode: ThemeMode
+  locale: AppLocale
   uiPreferences: {
     showRightPanel: boolean
   }

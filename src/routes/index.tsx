@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
+import { m } from '@/paraglide/messages.js'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -26,11 +27,13 @@ function ProjectsPage() {
   const [newProjectName, setNewProjectName] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
 
-  const summary = useMemo(
-    () =>
-      `${projects.length} ${projects.length === 1 ? 'project' : 'projects'} stored locally`,
-    [projects.length],
-  )
+  const summary = useMemo(() => {
+    if (projects.length === 1) {
+      return m.projects_summary_one({ count: String(projects.length) })
+    }
+
+    return m.projects_summary({ count: String(projects.length) })
+  }, [projects.length])
 
   const createProject = async () => {
     setPendingId('create')
@@ -54,33 +57,31 @@ function ProjectsPage() {
         <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-muted-foreground text-xs uppercase tracking-[0.22em]">
-              OpenThumbnail Workshop
+              {m.app_name()}
             </p>
-            <h1 className="text-3xl font-semibold tracking-tight">Projects</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">{m.projects_title()}</h1>
             <p className="text-muted-foreground mt-1 text-sm">{summary}</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => navigate({ to: '/settings' })}>
-              Settings
+              {m.settings_title()}
             </Button>
           </div>
         </section>
 
         <Card>
           <CardHeader>
-            <CardTitle>Create New Project</CardTitle>
-            <CardDescription>
-              Create a local workspace for prompts, timeline history, and outputs.
-            </CardDescription>
+            <CardTitle>{m.projects_create_title()}</CardTitle>
+            <CardDescription>{m.projects_create_description()}</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-[1fr_auto]">
             <Input
-              placeholder="Project name"
+              placeholder={m.projects_create_placeholder()}
               value={newProjectName}
               onChange={(event) => setNewProjectName(event.target.value)}
             />
             <Button disabled={pendingId !== null} onClick={createProject}>
-              New Project
+              {m.projects_create_button()}
             </Button>
           </CardContent>
         </Card>
@@ -94,7 +95,7 @@ function ProjectsPage() {
         {loading ? (
           <Card>
             <CardContent className="text-muted-foreground pt-6 text-sm">
-              Loading projects...
+              {m.projects_loading()}
             </CardContent>
           </Card>
         ) : null}
@@ -102,7 +103,7 @@ function ProjectsPage() {
         {!loading && projects.length === 0 ? (
           <Card>
             <CardContent className="text-muted-foreground pt-6 text-sm">
-              No projects yet. Create your first workspace to start generating thumbnails.
+              {m.projects_empty()}
             </CardContent>
           </Card>
         ) : null}
@@ -112,14 +113,17 @@ function ProjectsPage() {
             <Card key={project.id} size="sm" className="gap-3">
               <CardHeader>
                 <CardTitle>{project.name}</CardTitle>
-                <CardDescription>
-                  Updated {formatDate(project.updatedAt)}
-                </CardDescription>
+                <CardDescription>{formatDate(project.updatedAt)}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-1 text-xs">
-                <p className="text-muted-foreground">Default model: {project.defaultModel ?? 'none'}</p>
                 <p className="text-muted-foreground">
-                  Canvas: {project.defaultResolution} / {project.defaultAspectRatio}
+                  {m.projects_default_model({ model: project.defaultModel ?? m.common_none() })}
+                </p>
+                <p className="text-muted-foreground">
+                  {m.projects_default_canvas({
+                    resolution: project.defaultResolution,
+                    ratio: project.defaultAspectRatio,
+                  })}
                 </p>
               </CardContent>
               <CardFooter className="flex flex-wrap gap-2">
@@ -130,7 +134,7 @@ function ProjectsPage() {
                     void openProject(project.id)
                   }}
                 >
-                  Open
+                  {m.projects_open()}
                 </Button>
                 <Button
                   size="sm"
@@ -149,7 +153,7 @@ function ProjectsPage() {
                     }
                   }}
                 >
-                  Duplicate
+                  {m.projects_duplicate()}
                 </Button>
                 <Button
                   size="sm"
@@ -165,7 +169,7 @@ function ProjectsPage() {
                     }
                   }}
                 >
-                  Delete
+                  {m.projects_delete()}
                 </Button>
               </CardFooter>
             </Card>
