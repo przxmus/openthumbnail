@@ -1,13 +1,36 @@
 import { OpenRouter } from '@openrouter/sdk'
+import { createServerFn } from '@tanstack/react-start'
 
 import type { ModelCapability } from '@/types/workshop'
 
-const CACHE_KEY = 'openthumbnail.model-catalog.v1'
+const CACHE_KEY = 'openthumbnail.model-catalog.v2'
 const CACHE_TTL_MS = 1000 * 60 * 10
+const OPENROUTER_FRONTEND_IMAGE_MODELS_URL =
+  'https://openrouter.ai/api/frontend/models/find?input_modalities=image%2Ctext&output_modalities=image'
 
 interface CachePayload {
   fetchedAt: number
   models: Array<ModelCapability>
+}
+
+interface OpenRouterFrontendModel {
+  slug: string
+  name: string
+  description?: string
+  hidden?: boolean
+  output_modalities?: Array<string>
+  input_modalities?: Array<string>
+  endpoint?: {
+    is_hidden?: boolean
+    is_disabled?: boolean
+  }
+}
+
+interface OpenRouterFrontendModelsResponse {
+  models?: Array<OpenRouterFrontendModel>
+  data?: {
+    models?: Array<OpenRouterFrontendModel>
+  }
 }
 
 function parseCache() {
@@ -40,12 +63,30 @@ function saveCache(models: Array<ModelCapability>) {
   window.localStorage.setItem(CACHE_KEY, JSON.stringify(payload))
 }
 
+const getFrontendImageModels = createServerFn({ method: 'GET' }).handler(async () => {
+  const response = await fetch(OPENROUTER_FRONTEND_IMAGE_MODELS_URL, {
+    headers: {
+      Accept: 'application/json',
+    },
+  })
+
+  if (!response.ok) {
+    throw new Error(`OpenRouter frontend models request failed with ${response.status}`)
+  }
+
+  const payload = (await response.json()) as OpenRouterFrontendModelsResponse
+  const entries = payload.models ?? payload.data?.models ?? []
+
+  return entries
+})
+
 function isLikelyNegativePromptCapable(model: {
-  id: string
+  id?: string
+  slug?: string
   name: string
   description?: string
 }) {
-  const text = `${model.id} ${model.name} ${model.description ?? ''}`.toLowerCase()
+  const text = `${model.id ?? model.slug ?? ''} ${model.name} ${model.description ?? ''}`.toLowerCase()
   return /(flux|stable|sd|imagen|ideogram|recraft|playground|image)/.test(text)
 }
 
@@ -87,6 +128,34 @@ export function getCachedModelCatalog() {
 export async function listOpenRouterImageModels(apiKey: string) {
   const cached = parseCache()
   const client = new OpenRouter({ apiKey })
+
+  try {
+    const frontendModels = await getFrontendImageModels()
+
+    const models = frontendModels
+      .filter((model) => !model.hidden)
+      .filter((model) => !model.endpoint?.is_hidden && !model.endpoint?.is_disabled)
+      .filter((model) => (model.output_modalities ?? []).includes('image'))
+      .map<ModelCapability>((model) => ({
+        id: model.slug,
+        name: model.name,
+        supportsImages: true,
+        supportsReferences: (model.input_modalities ?? []).includes('image'),
+        supportsNegativePrompt: isLikelyNegativePromptCapable(model),
+        maxOutputs: undefined,
+        availability: 'available',
+        description: model.description,
+      }))
+      .filter((model) => model.id.length > 0 && model.name.length > 0)
+      .sort((a, b) => a.name.localeCompare(b.name))
+
+    if (models.length > 0) {
+      saveCache(models)
+      return models
+    }
+  } catch {
+    // fallback below
+  }
 
   try {
     const response = await client.models.list()
