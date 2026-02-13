@@ -57,6 +57,25 @@ function normalizeReferenceImages(referenceDataUrls: Array<string> | undefined) 
   }))
 }
 
+function asImageRecord(value: unknown): { imageUrl?: { url?: string } } | null {
+  if (!value || typeof value !== 'object') {
+    return null
+  }
+
+  return value as { imageUrl?: { url?: string } }
+}
+
+function toImagePayload(url: string) {
+  if (url.startsWith('data:')) {
+    const match = url.match(/^data:image\/[^;]+;base64,(.+)$/)
+    if (match) {
+      return { b64Json: match[1], url }
+    }
+  }
+
+  return { url }
+}
+
 export class OpenThumbnailOpenRouterImageAdapter extends BaseImageAdapter<
   string,
   OpenThumbnailImageProviderOptions,
@@ -109,21 +128,35 @@ export class OpenThumbnailOpenRouterImageAdapter extends BaseImageAdapter<
     })
 
     const images: Array<{ url?: string; b64Json?: string }> = []
+    const seen = new Set<string>()
+
+    const pushUnique = (url: string | undefined) => {
+      if (!url) {
+        return
+      }
+
+      const key = url.startsWith('data:') ? `data:${url.slice(0, 128)}` : `url:${url}`
+      if (seen.has(key)) {
+        return
+      }
+
+      seen.add(key)
+      images.push(toImagePayload(url))
+    }
 
     for (const choice of response.choices) {
       const choiceImages = choice.message.images ?? []
 
       for (const image of choiceImages) {
-        const value = image.imageUrl.url
-        if (value.startsWith('data:')) {
-          const match = value.match(/^data:image\/[^;]+;base64,(.+)$/)
-          if (match) {
-            images.push({ b64Json: match[1], url: value })
-            continue
-          }
-        }
+        pushUnique(image.imageUrl.url)
+      }
 
-        images.push({ url: value })
+      const content = choice.message.content
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          const record = asImageRecord(part)
+          pushUnique(record?.imageUrl?.url)
+        }
       }
     }
 

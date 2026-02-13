@@ -205,6 +205,7 @@ export interface GenerationRequest {
   personas: Array<Persona>
   personaAssets: Array<OutputAsset>
   includeTrace: boolean
+  remixOfAssetId?: string
 }
 
 export interface GenerationResult {

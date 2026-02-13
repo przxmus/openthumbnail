@@ -512,6 +512,7 @@ export function useWorkshopProject(projectId: string) {
           personas: selectedPersonas,
           personaAssets,
           includeTrace: settings.nerdMode,
+          remixOfAssetId: params.remixOfAssetId,
         })
 
         const outputs: GenerationStep['outputs'] = []

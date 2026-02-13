@@ -437,6 +437,12 @@ function ProjectWorkshopPage() {
       return
     }
 
+    setModelId(step.input.modelId)
+    setAspectRatio(step.input.aspectRatio)
+    setResolutionPreset(step.input.resolutionPreset)
+    setOutputCount(step.input.outputCount)
+    setSelectedPersonaIds(step.input.personaIds)
+
     if (prompt === step.input.prompt) {
       setPrompt('')
     }
@@ -445,8 +451,8 @@ function ProjectWorkshopPage() {
       setNegativePrompt('')
     }
 
-    setSelectedReferenceIds((current) =>
-      current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+    setSelectedReferenceIds(
+      Array.from(new Set([outputAssetId, ...step.input.referenceAssetIds])),
     )
     setRemixOfStepId(step.id)
     setRemixOfAssetId(outputAssetId)
@@ -466,6 +472,11 @@ function ProjectWorkshopPage() {
 
         if (sourceGeneration) {
           resolvedStepId = sourceGeneration.id
+          setModelId(sourceGeneration.input.modelId)
+          setAspectRatio(sourceGeneration.input.aspectRatio)
+          setResolutionPreset(sourceGeneration.input.resolutionPreset)
+          setOutputCount(sourceGeneration.input.outputCount)
+          setSelectedPersonaIds(sourceGeneration.input.personaIds)
 
           if (prompt === sourceGeneration.input.prompt) {
             setPrompt('')
@@ -478,9 +489,22 @@ function ProjectWorkshopPage() {
       }
     }
 
-    setSelectedReferenceIds((current) =>
-      current.includes(outputAssetId) ? current : [outputAssetId, ...current],
-    )
+    if (resolvedStepId) {
+      const resolved = stepsById.get(resolvedStepId)
+      if (resolved?.type === 'generation') {
+        setSelectedReferenceIds(
+          Array.from(new Set([outputAssetId, ...resolved.input.referenceAssetIds])),
+        )
+      } else {
+        setSelectedReferenceIds((current) =>
+          current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+        )
+      }
+    } else {
+      setSelectedReferenceIds((current) =>
+        current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+      )
+    }
     setRemixOfStepId(resolvedStepId)
     setRemixOfAssetId(outputAssetId)
   }
@@ -1047,7 +1071,7 @@ function ProjectWorkshopPage() {
                                       <Button
                                         size="xs"
                                         variant="outline"
-                                        className="border-zinc-500/60 bg-transparent text-zinc-100 hover:bg-zinc-700/70"
+                                        className="border-zinc-500/60 bg-transparent text-zinc-100 hover:bg-zinc-700/70 hover:text-zinc-100"
                                         onClick={() => {
                                           void onCopyText(step.input.prompt)
                                         }}
@@ -1065,7 +1089,7 @@ function ProjectWorkshopPage() {
                                         <Button
                                           size="xs"
                                           variant="outline"
-                                          className="border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100"
+                                          className="border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-200 dark:hover:text-zinc-900"
                                           onClick={() => {
                                             void onCopyText(step.input.negativePrompt ?? '')
                                           }}

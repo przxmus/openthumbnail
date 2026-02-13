@@ -14,8 +14,9 @@ function buildPrompt(
   prompt: string,
   references: Array<OutputAsset>,
   personas: Array<Persona>,
+  remixActive: boolean,
 ): string {
-  if (!references.length && !personas.length) {
+  if (!references.length && !personas.length && !remixActive) {
     return prompt
   }
 
@@ -27,7 +28,11 @@ function buildPrompt(
     ? `\n\nReference images attached: ${references.length}. Match composition/style cues while keeping originality.`
     : ''
 
-  return `${prompt}${personaContext}${referenceContext}`
+  const remixContext = remixActive
+    ? '\n\nRemix mode: prioritize the first attached reference as the primary composition anchor. Keep subject identity and layout close unless explicitly changed by prompt.'
+    : ''
+
+  return `${prompt}${personaContext}${referenceContext}${remixContext}`
 }
 
 function parseProviderUrl(url: string | undefined) {
@@ -89,6 +94,50 @@ async function toOutputs(
   )
 }
 
+async function hashBlob(blob: Blob) {
+  if (typeof crypto === 'undefined') {
+    return null
+  }
+
+  try {
+    const buffer = await blob.arrayBuffer()
+    const digest = await crypto.subtle.digest('SHA-256', buffer)
+    const bytes = new Uint8Array(digest)
+    return Array.from(bytes)
+      .map((value) => value.toString(16).padStart(2, '0'))
+      .join('')
+  } catch {
+    return null
+  }
+}
+
+async function dedupeOutputsByContent(
+  outputs: Array<{
+    blob: Blob
+    mimeType: string
+    width: number
+    height: number
+    providerUrl?: string
+    revisedPrompt?: string
+  }>,
+) {
+  const seen = new Set<string>()
+  const unique: typeof outputs = []
+
+  for (const output of outputs) {
+    const hash = await hashBlob(output.blob)
+    const key = hash ?? `${output.providerUrl ?? 'blob'}:${output.blob.size}`
+    if (seen.has(key)) {
+      continue
+    }
+
+    seen.add(key)
+    unique.push(output)
+  }
+
+  return unique
+}
+
 export async function runGeneration(request: GenerationRequest): Promise<GenerationResult> {
   const adapter = openThumbnailOpenRouterImage(request.apiKey, request.input.modelId)
 
@@ -96,7 +145,12 @@ export async function runGeneration(request: GenerationRequest): Promise<Generat
     ? await Promise.all(request.references.map((reference) => blobToDataUrl(reference.blob)))
     : []
 
-  const prompt = buildPrompt(request.input.prompt, request.references, request.personas)
+  const prompt = buildPrompt(
+    request.input.prompt,
+    request.references,
+    request.personas,
+    Boolean(request.remixOfAssetId),
+  )
   const startedAt = Date.now()
   const attempts: Array<GenerationAttemptTrace> = []
 
@@ -146,7 +200,8 @@ export async function runGeneration(request: GenerationRequest): Promise<Generat
       attempts.push(attempt)
 
       const outputs = await toOutputs(result.images, request)
-      return { result, outputs, attempt }
+      const uniqueOutputs = await dedupeOutputsByContent(outputs)
+      return { result, outputs: uniqueOutputs, attempt }
     } catch (reason) {
       attempt.success = false
       attempt.finishedAt = Date.now()
