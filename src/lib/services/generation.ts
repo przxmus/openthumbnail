@@ -1,6 +1,7 @@
 import { generateImage } from '@tanstack/ai'
 
 import type {
+  GenerationAttemptTrace,
   GenerationRequest,
   GenerationResult,
   OutputAsset,
@@ -41,34 +42,38 @@ function parseProviderUrl(url: string | undefined) {
   return url
 }
 
-export async function runGeneration(request: GenerationRequest): Promise<GenerationResult> {
-  const adapter = openThumbnailOpenRouterImage(request.apiKey, request.input.modelId)
+function isStackOverflowError(reason: unknown) {
+  if (!(reason instanceof Error)) {
+    return false
+  }
 
-  const supportsReferences = request.references.length > 0
+  if (reason.name === 'RangeError') {
+    return true
+  }
 
-  const referenceDataUrls = supportsReferences
-    ? await Promise.all(request.references.map((reference) => blobToDataUrl(reference.blob)))
-    : []
+  return reason.message.toLowerCase().includes('maximum call stack size exceeded')
+}
 
-  const prompt = buildPrompt(request.input.prompt, request.references, request.personas)
+function normalizeGenerationError(reason: unknown) {
+  if (isStackOverflowError(reason)) {
+    return new Error(
+      'The selected model failed in standard mode due to a provider compatibility issue. Compatibility fallback also failed. Try another model or simplify the request.',
+    )
+  }
 
-  const startedAt = Date.now()
+  if (reason instanceof Error) {
+    return new Error(reason.message || 'Image generation failed')
+  }
 
-  const result = await generateImage({
-    adapter,
-    prompt,
-    numberOfImages: request.input.outputCount,
-    size: `${request.resolution.width}x${request.resolution.height}`,
-    modelOptions: {
-      negativePrompt: request.input.negativePrompt,
-      referenceDataUrls,
-    },
-  })
+  return new Error('Image generation failed')
+}
 
-  const finishedAt = Date.now()
-
-  const outputs = await Promise.all(
-    result.images.map(async (image) => {
+async function toOutputs(
+  images: Array<{ url?: string; b64Json?: string; revisedPrompt?: string }>,
+  request: GenerationRequest,
+) {
+  return Promise.all(
+    images.map(async (image) => {
       const blob = await resolveGeneratedImageBlob(image)
       const mimeType = blob.type || 'image/png'
 
@@ -82,27 +87,141 @@ export async function runGeneration(request: GenerationRequest): Promise<Generat
       }
     }),
   )
+}
+
+export async function runGeneration(request: GenerationRequest): Promise<GenerationResult> {
+  const adapter = openThumbnailOpenRouterImage(request.apiKey, request.input.modelId)
+
+  const referenceDataUrls = request.references.length
+    ? await Promise.all(request.references.map((reference) => blobToDataUrl(reference.blob)))
+    : []
+
+  const prompt = buildPrompt(request.input.prompt, request.references, request.personas)
+  const startedAt = Date.now()
+  const attempts: Array<GenerationAttemptTrace> = []
+
+  const runAttempt = async (params: {
+    mode: 'standard' | 'compatibility'
+    promptText: string
+    numberOfImages: number
+    negativePrompt?: string
+    references?: Array<string>
+  }) => {
+    const attemptStartedAt = Date.now()
+    const attempt: GenerationAttemptTrace = {
+      mode: params.mode,
+      startedAt: attemptStartedAt,
+      success: false,
+      requestPayload: {
+        model: request.input.modelId,
+        outputCount: params.numberOfImages,
+        resolution: request.input.resolutionPreset,
+        aspectRatio: request.input.aspectRatio,
+        hasNegativePrompt: Boolean(params.negativePrompt),
+        references: params.references?.length ?? 0,
+      },
+    }
+
+    try {
+      const result = await generateImage({
+        adapter,
+        prompt: params.promptText,
+        numberOfImages: params.numberOfImages,
+        size: `${request.resolution.width}x${request.resolution.height}`,
+        modelOptions: {
+          ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+          ...(params.references?.length
+            ? { referenceDataUrls: params.references }
+            : {}),
+        },
+      })
+
+      attempt.success = true
+      attempt.finishedAt = Date.now()
+      attempt.responsePayload = {
+        resultId: result.id,
+        model: result.model,
+        images: result.images.length,
+      }
+      attempts.push(attempt)
+
+      const outputs = await toOutputs(result.images, request)
+      return { result, outputs, attempt }
+    } catch (reason) {
+      attempt.success = false
+      attempt.finishedAt = Date.now()
+      attempt.error = reason instanceof Error ? reason.message : 'Generation failed'
+      attempts.push(attempt)
+      throw reason
+    }
+  }
+
+  let result:
+    | {
+        id: string
+        model: string
+      }
+    | undefined
+  let outputs: GenerationResult['outputs'] = []
+  let fallbackUsed = false
+
+  try {
+    const standard = await runAttempt({
+      mode: 'standard',
+      promptText: prompt,
+      numberOfImages: request.input.outputCount,
+      negativePrompt: request.input.negativePrompt,
+      references: referenceDataUrls,
+    })
+
+    result = standard.result
+    outputs = standard.outputs
+  } catch (reason) {
+    if (!isStackOverflowError(reason)) {
+      throw normalizeGenerationError(reason)
+    }
+
+    try {
+      const compatibility = await runAttempt({
+        mode: 'compatibility',
+        promptText: request.input.prompt,
+        numberOfImages: 1,
+      })
+
+      fallbackUsed = true
+      result = compatibility.result
+      outputs = compatibility.outputs
+    } catch (fallbackReason) {
+      throw normalizeGenerationError(fallbackReason)
+    }
+  }
+
+  const finishedAt = Date.now()
 
   return {
     outputs,
-    trace: request.includeTrace
-      ? {
-          requestAt: startedAt,
-          finishedAt,
-          requestPayload: {
-            model: request.input.modelId,
-            outputCount: request.input.outputCount,
-            aspectRatio: request.input.aspectRatio,
-            resolution: request.input.resolutionPreset,
-            hasNegativePrompt: Boolean(request.input.negativePrompt),
-            references: request.input.referenceAssetIds.length,
-          },
-          responsePayload: {
-            resultId: result.id,
-            model: result.model,
-            images: result.images.length,
-          },
-        }
-      : undefined,
+    trace: {
+      requestAt: startedAt,
+      finishedAt,
+      fallbackUsed,
+      ...(request.includeTrace
+        ? {
+            attempts,
+            requestPayload: {
+              model: request.input.modelId,
+              outputCount: fallbackUsed ? 1 : request.input.outputCount,
+              aspectRatio: request.input.aspectRatio,
+              resolution: request.input.resolutionPreset,
+              hasNegativePrompt: fallbackUsed ? false : Boolean(request.input.negativePrompt),
+              references: fallbackUsed ? 0 : request.input.referenceAssetIds.length,
+            },
+            responsePayload: {
+              resultId: result.id,
+              model: result.model,
+              images: outputs.length,
+            },
+          }
+        : undefined),
+    },
   }
 }

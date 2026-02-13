@@ -59,6 +59,19 @@ export interface GenerationOutput {
 export interface GenerationTrace {
   requestAt: number
   finishedAt?: number
+  fallbackUsed?: boolean
+  finalError?: string
+  attempts?: Array<GenerationAttemptTrace>
+  requestPayload?: Record<string, unknown>
+  responsePayload?: Record<string, unknown>
+}
+
+export interface GenerationAttemptTrace {
+  mode: 'standard' | 'compatibility'
+  startedAt: number
+  finishedAt?: number
+  success: boolean
+  error?: string
   requestPayload?: Record<string, unknown>
   responsePayload?: Record<string, unknown>
 }
@@ -132,6 +145,8 @@ export interface ModelCapability {
   maxOutputs?: number
   availability: 'available' | 'unavailable'
   description?: string
+  supportsChatCompletions?: boolean
+  catalogSource?: 'frontend' | 'v1' | 'cache'
 }
 
 export interface AppSettings {
@@ -143,6 +158,21 @@ export interface AppSettings {
   uiPreferences: {
     showRightPanel: boolean
   }
+}
+
+export interface TimelineUiState {
+  collapsedStepIds: Array<string>
+}
+
+export interface LightboxItem {
+  assetId: string
+  label: string
+}
+
+export interface LightboxContext {
+  title: string
+  items: Array<LightboxItem>
+  initialAssetId: string
 }
 
 export interface ProjectBackupManifest {

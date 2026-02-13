@@ -1,9 +1,19 @@
-import { APP_LOCALES, DEFAULT_SETTINGS, PROMPT_DRAFT_STORAGE_KEY, SETTINGS_STORAGE_KEY } from '@/lib/constants/workshop'
-import type { AppLocale, AppSettings, ThemeMode } from '@/types/workshop'
+import type { AppLocale, AppSettings, ThemeMode, TimelineUiState } from '@/types/workshop'
+import {
+  APP_LOCALES,
+  DEFAULT_SETTINGS,
+  PROMPT_DRAFT_STORAGE_KEY,
+  SETTINGS_STORAGE_KEY,
+  TIMELINE_UI_STATE_STORAGE_KEY,
+} from '@/lib/constants/workshop'
 
 export interface PromptDraft {
   prompt: string
   negativePrompt: string
+}
+
+const EMPTY_TIMELINE_UI_STATE: TimelineUiState = {
+  collapsedStepIds: [],
 }
 
 export const SETTINGS_UPDATED_EVENT = 'openthumbnail:settings-updated'
@@ -133,4 +143,45 @@ export function savePromptDraft(projectId: string, draft: PromptDraft) {
 
   parsed[projectId] = draft
   window.localStorage.setItem(PROMPT_DRAFT_STORAGE_KEY, JSON.stringify(parsed))
+}
+
+function normalizeTimelineUiState(value: unknown): TimelineUiState {
+  if (!value || typeof value !== 'object') {
+    return EMPTY_TIMELINE_UI_STATE
+  }
+
+  const candidate = value as Partial<TimelineUiState>
+  const collapsedStepIds = Array.isArray(candidate.collapsedStepIds)
+    ? candidate.collapsedStepIds.filter((item): item is string => typeof item === 'string')
+    : []
+
+  return {
+    collapsedStepIds,
+  }
+}
+
+export function loadTimelineUiState(projectId: string): TimelineUiState {
+  if (typeof window === 'undefined') {
+    return EMPTY_TIMELINE_UI_STATE
+  }
+
+  const parsed = safeParse<Record<string, TimelineUiState>>(
+    window.localStorage.getItem(TIMELINE_UI_STATE_STORAGE_KEY),
+  )
+
+  return normalizeTimelineUiState(parsed?.[projectId])
+}
+
+export function saveTimelineUiState(projectId: string, state: TimelineUiState) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  const parsed =
+    safeParse<Record<string, TimelineUiState>>(
+      window.localStorage.getItem(TIMELINE_UI_STATE_STORAGE_KEY),
+    ) ?? {}
+
+  parsed[projectId] = normalizeTimelineUiState(state)
+  window.localStorage.setItem(TIMELINE_UI_STATE_STORAGE_KEY, JSON.stringify(parsed))
 }

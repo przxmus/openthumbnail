@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import type { OutputAsset, Persona } from '@/types/workshop'
+import type { LightboxContext, OutputAsset, Persona } from '@/types/workshop'
 import { m } from '@/paraglide/messages.js'
 import { AssetThumb } from '@/components/workshop/asset-thumb'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ interface PersonaManagerModalProps {
   onAddPersonaImages: (personaId: string, files: Array<File>) => Promise<void>
   onRemovePersonaImage: (assetId: string) => Promise<void>
   onToggleSelectedPersona: (personaId: string) => void
+  onOpenLightbox: (context: LightboxContext) => void
 }
 
 export function PersonaManagerModal({
@@ -33,6 +34,7 @@ export function PersonaManagerModal({
   onAddPersonaImages,
   onRemovePersonaImage,
   onToggleSelectedPersona,
+  onOpenLightbox,
 }: PersonaManagerModalProps) {
   const [activePersonaId, setActivePersonaId] = useState<string | null>(null)
   const [newPersonaName, setNewPersonaName] = useState('')
@@ -217,9 +219,22 @@ export function PersonaManagerModal({
               <div className="grid min-h-0 grid-cols-2 gap-3 overflow-auto pr-1 md:grid-cols-3">
                 {activeAssets.map((asset) => (
                   <div key={asset.id} className="rounded-xl border border-border/70 p-2">
-                    <div className="aspect-square overflow-hidden rounded-lg">
+                    <button
+                      type="button"
+                      className="aspect-square w-full overflow-hidden rounded-lg"
+                      onClick={() => {
+                        onOpenLightbox({
+                          title: activePersona.name,
+                          initialAssetId: asset.id,
+                          items: activeAssets.map((entry) => ({
+                            assetId: entry.id,
+                            label: activePersona.name,
+                          })),
+                        })
+                      }}
+                    >
                       <AssetThumb asset={asset} alt={activePersona.name} />
-                    </div>
+                    </button>
                     <Button
                       size="xs"
                       variant="ghost"

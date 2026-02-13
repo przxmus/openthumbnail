@@ -1,6 +1,6 @@
 import type {
-  AppSettings,
   AppLocale,
+  AppSettings,
   AspectRatio,
   ResolutionPreset,
   ResolutionPresetConfig,
@@ -13,6 +13,7 @@ export const DATABASE_VERSION = 1
 
 export const SETTINGS_STORAGE_KEY = 'openthumbnail.settings.v1'
 export const PROMPT_DRAFT_STORAGE_KEY = 'openthumbnail.prompt-drafts.v1'
+export const TIMELINE_UI_STATE_STORAGE_KEY = 'openthumbnail.timeline-ui.v1'
 
 export const DEFAULT_SETTINGS: AppSettings = {
   openRouterApiKey: '',

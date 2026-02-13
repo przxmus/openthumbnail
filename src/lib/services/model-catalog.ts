@@ -6,7 +6,7 @@ import type { ModelCapability } from '@/types/workshop'
 const CACHE_KEY = 'openthumbnail.model-catalog.v2'
 const CACHE_TTL_MS = 1000 * 60 * 10
 const OPENROUTER_FRONTEND_IMAGE_MODELS_URL =
-  'https://openrouter.ai/api/frontend/models/find?input_modalities=image%2Ctext&output_modalities=image'
+  'https://openrouter.ai/api/frontend/models/find?fmt=cards&input_modalities=image%2Ctext&output_modalities=image'
 
 interface CachePayload {
   fetchedAt: number
@@ -23,6 +23,7 @@ interface OpenRouterFrontendModel {
   endpoint?: {
     is_hidden?: boolean
     is_disabled?: boolean
+    has_chat_completions?: boolean
   }
 }
 
@@ -145,6 +146,8 @@ export async function listOpenRouterImageModels(apiKey: string) {
         maxOutputs: undefined,
         availability: 'available',
         description: model.description,
+        supportsChatCompletions: model.endpoint?.has_chat_completions,
+        catalogSource: 'frontend',
       }))
       .filter((model) => model.id.length > 0 && model.name.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -177,6 +180,7 @@ export async function listOpenRouterImageModels(apiKey: string) {
           maxOutputs: undefined,
           availability: expired ? 'unavailable' : 'available',
           description: model.description,
+          catalogSource: 'v1',
         }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -185,7 +189,10 @@ export async function listOpenRouterImageModels(apiKey: string) {
     return models
   } catch (error) {
     if (cached && cached.models.length) {
-      return cached.models
+      return cached.models.map((model) => ({
+        ...model,
+        catalogSource: model.catalogSource ?? 'cache',
+      }))
     }
 
     throw error

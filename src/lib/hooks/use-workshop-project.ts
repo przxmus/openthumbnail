@@ -74,6 +74,44 @@ function byStepOrder(a: TimelineStep, b: TimelineStep) {
   return a.createdAt - b.createdAt
 }
 
+function mergeAssets(
+  current: Array<OutputAsset>,
+  incoming: Array<OutputAsset>,
+) {
+  const map = new Map<string, OutputAsset>()
+
+  for (const asset of current) {
+    map.set(asset.id, asset)
+  }
+
+  for (const asset of incoming) {
+    map.set(asset.id, asset)
+  }
+
+  return Array.from(map.values()).sort((a, b) => a.createdAt - b.createdAt)
+}
+
+function removeAssets(current: Array<OutputAsset>, assetIds: Array<string>) {
+  const blocked = new Set(assetIds)
+  return current.filter((asset) => !blocked.has(asset.id))
+}
+
+function mergePersonas(
+  current: Array<Persona>,
+  incoming: Array<Persona>,
+) {
+  const map = new Map<string, Persona>()
+  for (const persona of current) {
+    map.set(persona.id, persona)
+  }
+
+  for (const persona of incoming) {
+    map.set(persona.id, persona)
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.updatedAt - a.updatedAt)
+}
+
 export function useWorkshopProject(projectId: string) {
   const [project, setProject] = useState<Project | null>(null)
   const [steps, setSteps] = useState<Array<TimelineStep>>([])
@@ -88,7 +126,11 @@ export function useWorkshopProject(projectId: string) {
 
   const settings = useMemo(() => loadSettings(), [projectId])
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (options?: { preserveScroll?: boolean }) => {
+    const preserveScroll = options?.preserveScroll ?? false
+    const scrollY =
+      preserveScroll && typeof window !== 'undefined' ? window.scrollY : null
+
     if (!didLoadRef.current) {
       setLoading(true)
     }
@@ -129,6 +171,15 @@ export function useWorkshopProject(projectId: string) {
     } finally {
       didLoadRef.current = true
       setLoading(false)
+
+      if (scrollY !== null && typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({
+            top: scrollY,
+            behavior: 'auto',
+          })
+        })
+      }
     }
   }, [projectId, settings.openRouterApiKey])
 
@@ -188,10 +239,10 @@ export function useWorkshopProject(projectId: string) {
       }
 
       await upsertAsset(asset)
-      await reload()
+      setAssets((current) => mergeAssets(current, [asset]))
       return asset
     },
-    [project, reload],
+    [project],
   )
 
   const uploadReferenceFiles = useCallback(
@@ -202,6 +253,7 @@ export function useWorkshopProject(projectId: string) {
 
       setBusy(true)
       setQuotaState(null)
+      setError(null)
 
       try {
         for (const file of files) {
@@ -233,6 +285,7 @@ export function useWorkshopProject(projectId: string) {
 
       setBusy(true)
       setQuotaState(null)
+      setError(null)
 
       try {
         const thumbnail = await fetchBestYoutubeThumbnail(videoId)
@@ -244,18 +297,19 @@ export function useWorkshopProject(projectId: string) {
         }
 
         await upsertAsset(updatedAsset)
-        await reload()
+        setAssets((current) => mergeAssets(current, [updatedAsset]))
       } catch (reason) {
         if (isQuotaCleanupState(reason)) {
           setQuotaState(reason)
         } else {
+          setError(reason instanceof Error ? reason.message : 'Failed to import YouTube thumbnail')
           throw reason
         }
       } finally {
         setBusy(false)
       }
     },
-    [reload, storeReferenceFile],
+    [storeReferenceFile],
   )
 
   const createPersona = useCallback(
@@ -274,10 +328,10 @@ export function useWorkshopProject(projectId: string) {
       }
 
       await upsertPersona(persona)
-      await reload()
+      setPersonas((current) => mergePersonas(current, [persona]))
       return persona
     },
-    [reload],
+    [],
   )
 
   const renamePersonaItem = useCallback(
@@ -287,10 +341,10 @@ export function useWorkshopProject(projectId: string) {
         throw new Error('Persona name cannot be empty')
       }
 
-      await renamePersona(personaId, normalized)
-      await reload()
+      const nextPersona = await renamePersona(personaId, normalized)
+      setPersonas((current) => mergePersonas(current, [nextPersona]))
     },
-    [reload],
+    [],
   )
 
   const addPersonaImages = useCallback(
@@ -299,7 +353,8 @@ export function useWorkshopProject(projectId: string) {
         return
       }
 
-      const persona = await getPersona(personaId)
+      const persona =
+        personas.find((entry) => entry.id === personaId) ?? (await getPersona(personaId))
       if (!persona) {
         throw new Error('Persona not found')
       }
@@ -310,6 +365,7 @@ export function useWorkshopProject(projectId: string) {
       }
 
       const selected = files.slice(0, remainingSlots)
+      const newAssets: Array<OutputAsset> = []
       const newAssetIds: Array<string> = []
 
       for (const file of selected) {
@@ -327,33 +383,65 @@ export function useWorkshopProject(projectId: string) {
         }
 
         await upsertAsset(asset)
+        newAssets.push(asset)
         newAssetIds.push(asset.id)
       }
 
-      await setPersonaReferenceAssetIds(personaId, [
+      const updatedPersona = await setPersonaReferenceAssetIds(personaId, [
         ...persona.referenceAssetIds,
         ...newAssetIds,
       ])
 
-      await reload()
+      setAssets((current) => mergeAssets(current, newAssets))
+      setPersonas((current) => mergePersonas(current, [updatedPersona]))
     },
-    [reload],
+    [personas],
   )
 
   const removePersonaImage = useCallback(
     async (assetId: string) => {
       await deletePersonaReferenceAsset(assetId)
-      await reload()
+      setAssets((current) => removeAssets(current, [assetId]))
+      setPersonas((current) =>
+        current.map((persona) =>
+          persona.referenceAssetIds.includes(assetId)
+            ? {
+                ...persona,
+                referenceAssetIds: persona.referenceAssetIds.filter((id) => id !== assetId),
+                updatedAt: Date.now(),
+              }
+            : persona,
+        ),
+      )
     },
-    [reload],
+    [],
   )
 
   const removePersona = useCallback(
     async (personaId: string) => {
+      const persona = personas.find((entry) => entry.id === personaId)
       await deletePersona(personaId)
-      await reload()
+      setPersonas((current) => current.filter((entry) => entry.id !== personaId))
+
+      if (!persona) {
+        return
+      }
+
+      const remainingAssetIds = new Set(
+        personas
+          .filter((entry) => entry.id !== personaId)
+          .flatMap((entry) => entry.referenceAssetIds),
+      )
+
+      const removedAssetIds = persona.referenceAssetIds.filter(
+        (assetId) => !remainingAssetIds.has(assetId),
+      )
+
+      if (removedAssetIds.length) {
+        setAssets((current) => removeAssets(current, removedAssetIds))
+      }
     },
-    [reload],
+    [personas],
   )
 
   const generateStep = useCallback(
@@ -491,7 +579,7 @@ export function useWorkshopProject(projectId: string) {
 
         saveSettings(updatedSettings)
 
-        await reload()
+        await reload({ preserveScroll: true })
       } catch (reason) {
         if (isQuotaCleanupState(reason)) {
           setQuotaState(reason)
@@ -548,7 +636,7 @@ export function useWorkshopProject(projectId: string) {
           operations,
         })
 
-        await reload()
+        await reload({ preserveScroll: true })
       } catch (reason) {
         if (isQuotaCleanupState(reason)) {
           setQuotaState(reason)
@@ -595,7 +683,7 @@ export function useWorkshopProject(projectId: string) {
   const importBackup = useCallback(
     async (file: File) => {
       const importedProject = await importProjectBackup(file)
-      await reload()
+      await reload({ preserveScroll: true })
       return importedProject
     },
     [reload],
@@ -608,7 +696,7 @@ export function useWorkshopProject(projectId: string) {
   const removeProjectAndRefresh = useCallback(
     async (id: string) => {
       await deleteProject(id)
-      await reload()
+      await reload({ preserveScroll: true })
     },
     [reload],
   )
@@ -620,9 +708,9 @@ export function useWorkshopProject(projectId: string) {
   const removeReferenceImage = useCallback(
     async (assetId: string) => {
       await deleteReferenceAsset(assetId)
-      await reload()
+      setAssets((current) => removeAssets(current, [assetId]))
     },
-    [reload],
+    [],
   )
 
   const missingReferenceIdsByStep = useMemo(() => {

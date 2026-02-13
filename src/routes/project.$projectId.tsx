@@ -1,11 +1,19 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
-import type { EditOperations, ModelCapability, OutputAsset, TimelineStep } from '@/types/workshop'
+import type {
+  EditOperations,
+  GenerationStep,
+  LightboxContext,
+  ModelCapability,
+  OutputAsset,
+  TimelineStep,
+} from '@/types/workshop'
 
 import { m } from '@/paraglide/messages.js'
 import { AssetThumb } from '@/components/workshop/asset-thumb'
 import { ImageEditorModal } from '@/components/workshop/image-editor-modal'
+import { ImageLightboxModal } from '@/components/workshop/image-lightbox-modal'
 import { PersonaManagerModal } from '@/components/workshop/persona-manager-modal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -22,7 +30,12 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { ASPECT_RATIOS, MAX_OUTPUTS_UI } from '@/lib/constants/workshop'
 import { useWorkshopProject } from '@/lib/hooks/use-workshop-project'
-import { loadPromptDraft, savePromptDraft } from '@/lib/storage/settings'
+import {
+  loadPromptDraft,
+  loadTimelineUiState,
+  savePromptDraft,
+  saveTimelineUiState,
+} from '@/lib/storage/settings'
 
 export const Route = createFileRoute('/project/$projectId')({
   component: ProjectWorkshopPage,
@@ -63,6 +76,46 @@ function getModelCapability(models: Array<ModelCapability>, modelId: string) {
 
 function sliderClassName() {
   return 'range-input h-2.5 w-full min-w-0'
+}
+
+function findSourceGenerationStep(
+  stepsById: Map<string, TimelineStep>,
+  stepsInOrder: Array<TimelineStep>,
+  sourceAssetId: string,
+): GenerationStep | null {
+  const MAX_DEPTH = 30
+  let currentAssetId: string | null = sourceAssetId
+  let depth = 0
+
+  while (currentAssetId && depth < MAX_DEPTH) {
+    const generation = stepsInOrder.find(
+      (step): step is GenerationStep =>
+        step.type === 'generation' &&
+        step.outputs.some((output) => output.assetId === currentAssetId),
+    )
+
+    if (generation) {
+      return generation
+    }
+
+    const editSource = stepsInOrder.find(
+      (step) => step.type === 'edit' && step.outputAssetId === currentAssetId,
+    )
+
+    if (!editSource) {
+      break
+    }
+
+    const direct = stepsById.get(editSource.id)
+    if (!direct || direct.type !== 'edit') {
+      break
+    }
+
+    currentAssetId = direct.sourceAssetId
+    depth += 1
+  }
+
+  return null
 }
 
 function ProjectWorkshopPage() {
@@ -121,10 +174,17 @@ function ProjectWorkshopPage() {
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState(false)
   const [remixOfStepId, setRemixOfStepId] = useState<string | undefined>(undefined)
   const [remixOfAssetId, setRemixOfAssetId] = useState<string | undefined>(undefined)
+  const [collapsedStepIds, setCollapsedStepIds] = useState<Array<string>>([])
+  const [lightboxContext, setLightboxContext] = useState<LightboxContext | null>(null)
   const [cleanupStateVisible, setCleanupStateVisible] = useState(false)
   const [cleanupRows, setCleanupRows] = useState<
     Array<{ project: { id: string; name: string }; bytes: number }>
   >([])
+
+  const stepsById = useMemo(
+    () => new Map(steps.map((step) => [step.id, step])),
+    [steps],
+  )
 
   const modelCapability = useMemo(
     () => getModelCapability(models, modelId),
@@ -139,6 +199,34 @@ function ProjectWorkshopPage() {
     ? assetsMap.get(editorSourceAssetId) ?? null
     : null
   const remixPreviewAsset = remixOfAssetId ? assetsMap.get(remixOfAssetId) ?? null : null
+  const selectedPersonaNames = useMemo(
+    () =>
+      selectedPersonaIds
+        .map((personaId) => personas.find((persona) => persona.id === personaId)?.name)
+        .filter((name): name is string => Boolean(name)),
+    [personas, selectedPersonaIds],
+  )
+  const displayedPersonaNames = selectedPersonaNames.slice(0, 2)
+  const personaOverflowCount = Math.max(0, selectedPersonaNames.length - displayedPersonaNames.length)
+  const lightboxGalleryItems = useMemo(() => {
+    if (!lightboxContext) {
+      return []
+    }
+
+    return lightboxContext.items
+      .map((item) => {
+        const asset = assetsMap.get(item.assetId)
+        if (!asset) {
+          return null
+        }
+
+        return {
+          asset,
+          label: item.label,
+        }
+      })
+      .filter((item): item is { asset: OutputAsset; label: string } => Boolean(item))
+  }, [assetsMap, lightboxContext])
 
   useEffect(() => {
     if (!project) {
@@ -163,6 +251,7 @@ function ProjectWorkshopPage() {
     const draft = loadPromptDraft(project.id)
     setPrompt(draft.prompt)
     setNegativePrompt(draft.negativePrompt)
+    setCollapsedStepIds(loadTimelineUiState(project.id).collapsedStepIds)
   }, [project, settings.lastUsedModel])
 
   useEffect(() => {
@@ -186,6 +275,40 @@ function ProjectWorkshopPage() {
       negativePrompt,
     })
   }, [negativePrompt, project, prompt])
+
+  useEffect(() => {
+    if (!project) {
+      return
+    }
+
+    setCollapsedStepIds((current) => {
+      const stepIds = new Set(steps.map((step) => step.id))
+      const next = current.filter((id) => stepIds.has(id))
+      const existing = new Set(next)
+
+      for (const step of steps) {
+        if (!existing.has(step.id)) {
+          next.push(step.id)
+        }
+      }
+
+      if (next.length === current.length && next.every((id, index) => id === current[index])) {
+        return current
+      }
+
+      return next
+    })
+  }, [project, steps])
+
+  useEffect(() => {
+    if (!project) {
+      return
+    }
+
+    saveTimelineUiState(project.id, {
+      collapsedStepIds,
+    })
+  }, [collapsedStepIds, project])
 
   useEffect(() => {
     setOutputCount((current) => Math.max(1, Math.min(current, maxOutputs)))
@@ -272,28 +395,89 @@ function ProjectWorkshopPage() {
     setCleanupRows(rows.map((entry) => ({ project: entry.project, bytes: entry.bytes })))
   }
 
-  const onRemixFrom = (step: TimelineStep, outputAssetId: string) => {
-    if (step.type !== 'generation') {
+  const openLightbox = (context: LightboxContext) => {
+    if (!context.items.length) {
       return
     }
 
+    setLightboxContext(context)
+  }
+
+  const toggleStepCollapsed = (stepId: string) => {
+    setCollapsedStepIds((current) =>
+      current.includes(stepId)
+        ? current.filter((id) => id !== stepId)
+        : [...current, stepId],
+    )
+  }
+
+  const onCopyPrompt = async (step: GenerationStep) => {
+    await navigator.clipboard.writeText(step.input.prompt)
+  }
+
+  const onReusePrompt = (step: GenerationStep) => {
     setModelId(step.input.modelId)
     setPrompt(step.input.prompt)
     setNegativePrompt(step.input.negativePrompt ?? '')
     setAspectRatio(step.input.aspectRatio)
     setResolutionPreset(step.input.resolutionPreset)
     setOutputCount(step.input.outputCount)
-    setSelectedReferenceIds(Array.from(new Set([outputAssetId, ...step.input.referenceAssetIds])))
+    setSelectedReferenceIds(step.input.referenceAssetIds)
     setSelectedPersonaIds(step.input.personaIds)
+    setRemixOfStepId(undefined)
+    setRemixOfAssetId(undefined)
+  }
+
+  const onRemixFrom = (step: TimelineStep, outputAssetId: string) => {
+    if (step.type !== 'generation') {
+      return
+    }
+
+    if (prompt === step.input.prompt) {
+      setPrompt('')
+    }
+
+    if (negativePrompt === (step.input.negativePrompt ?? '')) {
+      setNegativePrompt('')
+    }
+
+    setSelectedReferenceIds((current) =>
+      current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+    )
     setRemixOfStepId(step.id)
     setRemixOfAssetId(outputAssetId)
   }
 
   const onRemixFromAsset = (outputAssetId: string, stepId?: string) => {
+    let resolvedStepId = stepId
+
+    if (stepId) {
+      const sourceStep = stepsById.get(stepId)
+      if (sourceStep?.type === 'edit') {
+        const sourceGeneration = findSourceGenerationStep(
+          stepsById,
+          steps,
+          sourceStep.sourceAssetId,
+        )
+
+        if (sourceGeneration) {
+          resolvedStepId = sourceGeneration.id
+
+          if (prompt === sourceGeneration.input.prompt) {
+            setPrompt('')
+          }
+
+          if (negativePrompt === (sourceGeneration.input.negativePrompt ?? '')) {
+            setNegativePrompt('')
+          }
+        }
+      }
+    }
+
     setSelectedReferenceIds((current) =>
       current.includes(outputAssetId) ? current : [outputAssetId, ...current],
     )
-    setRemixOfStepId(stepId)
+    setRemixOfStepId(resolvedStepId)
     setRemixOfAssetId(outputAssetId)
   }
 
@@ -407,7 +591,7 @@ function ProjectWorkshopPage() {
                 <select
                   id="model"
                   value={modelId}
-                  className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                  className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-11 text-sm"
                   onChange={(event) => setModelId(event.target.value)}
                 >
                   <option value="">{m.generation_model_placeholder()}</option>
@@ -420,7 +604,7 @@ function ProjectWorkshopPage() {
                     </option>
                   ))}
                 </select>
-                <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                <span className="text-muted-foreground pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
                   <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
                     <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
                   </svg>
@@ -458,7 +642,7 @@ function ProjectWorkshopPage() {
                     <select
                       id="ratio"
                       value={aspectRatio}
-                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-11 text-sm"
                       onChange={(event) => {
                         setAspectRatio(event.target.value as typeof aspectRatio)
                       }}
@@ -469,7 +653,7 @@ function ProjectWorkshopPage() {
                         </option>
                       ))}
                     </select>
-                    <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="text-muted-foreground pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
                       <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
                         <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
                       </svg>
@@ -482,7 +666,7 @@ function ProjectWorkshopPage() {
                     <select
                       id="resolution"
                       value={resolutionPreset}
-                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-11 text-sm"
                       onChange={(event) => {
                         setResolutionPreset(event.target.value as typeof resolutionPreset)
                       }}
@@ -490,7 +674,7 @@ function ProjectWorkshopPage() {
                       <option value="720p">720p</option>
                       <option value="1080p">1080p</option>
                     </select>
-                    <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                    <span className="text-muted-foreground pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
                       <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
                         <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
                       </svg>
@@ -535,9 +719,28 @@ function ProjectWorkshopPage() {
                 <div className="bg-muted/60 text-muted-foreground rounded-xl p-2 text-xs">
                   <div className="flex items-start gap-2">
                     {remixPreviewAsset ? (
-                      <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-border/70">
+                      <button
+                        type="button"
+                        className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-border/70"
+                        onClick={() => {
+                          if (!remixOfAssetId) {
+                            return
+                          }
+
+                          openLightbox({
+                            title: m.generation_title(),
+                            initialAssetId: remixOfAssetId,
+                            items: [
+                              {
+                                assetId: remixOfAssetId,
+                                label: m.timeline_output(),
+                              },
+                            ],
+                          })
+                        }}
+                      >
                         <AssetThumb asset={remixPreviewAsset} alt={m.timeline_output()} />
-                      </div>
+                      </button>
                     ) : null}
                     <div className="min-w-0">
                       <p>{m.generation_remix_active({ stepId: remixOfStepId })}</p>
@@ -638,9 +841,23 @@ function ProjectWorkshopPage() {
                         )
                       }}
                     >
-                      <div className="h-16 w-20 overflow-hidden rounded-xl">
+                      <button
+                        type="button"
+                        className="h-16 w-20 overflow-hidden rounded-xl"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openLightbox({
+                            title: m.references_title(),
+                            initialAssetId: asset.id,
+                            items: referenceAssets.map((entry) => ({
+                              assetId: entry.id,
+                              label: m.references_title(),
+                            })),
+                          })
+                        }}
+                      >
                         <AssetThumb asset={asset} alt={m.references_title()} />
-                      </div>
+                      </button>
                       <div className="min-w-0 text-xs">
                         <p className="truncate font-medium">{asset.kind}</p>
                         <p className="text-muted-foreground truncate">{formatDate(asset.createdAt)}</p>
@@ -672,6 +889,22 @@ function ProjectWorkshopPage() {
                   <p className="text-muted-foreground text-xs">
                     {m.personas_selected({ count: String(selectedPersonaIds.length) })}
                   </p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedPersonaNames.length === 0 ? (
+                      <Badge variant="outline">{m.common_none()}</Badge>
+                    ) : (
+                      <>
+                        {displayedPersonaNames.map((name) => (
+                          <Badge key={name} variant="outline">
+                            {name}
+                          </Badge>
+                        ))}
+                        {personaOverflowCount > 0 ? (
+                          <Badge variant="outline">+{personaOverflowCount}</Badge>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => setIsPersonaModalOpen(true)}>
                   {m.personas_open_manager()}
@@ -760,234 +993,332 @@ function ProjectWorkshopPage() {
                 </div>
               ) : (
                 <ol className="relative space-y-4 border-l border-dashed pl-5">
-                  {steps.map((step) => (
-                    <li key={step.id} className="relative">
-                      <span className="bg-primary absolute -left-[1.72rem] top-3 h-3 w-3 rounded-full" />
+                  {steps.map((step) => {
+                    const collapsed = collapsedStepIds.includes(step.id)
 
-                      {step.type === 'generation' ? (
-                        <Card size="sm" className="gap-4">
-                          <CardHeader>
-                            <div className="flex items-center justify-between gap-2">
-                              <CardTitle className="text-base">{m.timeline_generation_step()}</CardTitle>
-                              <Badge>{formatDate(step.createdAt)}</Badge>
-                            </div>
-                            <CardDescription>
-                              {m.timeline_model_line({
-                                model: step.input.modelId,
-                                resolution: step.input.resolutionPreset,
-                                ratio: step.input.aspectRatio,
-                              })}
-                            </CardDescription>
-                          </CardHeader>
-                          <CardContent className="space-y-3 min-w-0 overflow-hidden">
-                            <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
-                              <p className="text-zinc-400">{m.timeline_prompt()}</p>
-                              <p className="mt-1 whitespace-pre-wrap">{step.input.prompt}</p>
-                            </div>
+                    return (
+                      <li key={step.id} className="relative">
+                        <span className="bg-primary absolute -left-[1.72rem] top-3 h-3 w-3 rounded-full" />
 
-                            {step.input.negativePrompt ? (
-                              <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
-                                <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
-                                <p className="mt-1 whitespace-pre-wrap">{step.input.negativePrompt}</p>
-                              </div>
-                            ) : null}
-
-                            <div className="flex min-w-0 flex-wrap gap-2">
-                              <span className="text-muted-foreground text-xs">
-                                {m.timeline_references_label()}:
-                              </span>
-                              {step.input.referenceAssetIds.length === 0 ? (
-                                <Badge variant="outline">{m.timeline_references_none()}</Badge>
-                              ) : (
-                                step.input.referenceAssetIds.map((assetId) => {
-                                  const missingReferences = missingReferenceIdsByStep.get(step.id)
-                                  const isDeleted = missingReferences
-                                    ? missingReferences.includes(assetId)
-                                    : !assetsMap.has(assetId)
-                                  return (
-                                    <Badge key={assetId} variant={isDeleted ? 'destructive' : 'outline'}>
-                                      {isDeleted
-                                        ? m.references_deleted_badge()
-                                        : assetId.slice(0, 8)}
-                                    </Badge>
-                                  )
-                                })
-                              )}
-                            </div>
-
-                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                              {step.outputs.map((output) => {
-                                const asset = assetsMap.get(output.assetId)
-                                if (!asset) {
-                                  return null
-                                }
-
-                                return (
-                                  <div
-                                    key={output.assetId}
-                                    className="border-border/60 overflow-hidden rounded-2xl border"
+                        {step.type === 'generation' ? (
+                          <Card size="sm" className="gap-4">
+                            <CardHeader>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <CardTitle className="text-base">{m.timeline_generation_step()}</CardTitle>
+                                  {step.trace?.fallbackUsed ? (
+                                    <Badge variant="outline">{m.timeline_fallback_badge()}</Badge>
+                                  ) : null}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge>{formatDate(step.createdAt)}</Badge>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => toggleStepCollapsed(step.id)}
                                   >
-                                    <div className="h-44 w-full overflow-hidden">
-                                      <AssetThumb asset={asset} alt={m.timeline_output()} />
-                                    </div>
-                                    <div className="space-y-2 p-3">
-                                      <div className="flex flex-wrap gap-2">
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          onClick={() => onRemixFrom(step, output.assetId)}
-                                        >
-                                          {m.timeline_action_remix()}
-                                        </Button>
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          onClick={() => openEditorForAsset(output.assetId)}
-                                        >
-                                          {m.timeline_action_edit()}
-                                        </Button>
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          onClick={() => void exportSingleAsset(output.assetId)}
-                                        >
-                                          {m.timeline_action_jpg()}
-                                        </Button>
-                                      </div>
-                                      <p className="text-muted-foreground text-xs">
-                                        {asset.width}x{asset.height} · {asset.mimeType}
-                                      </p>
-                                    </div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-
-                            {settings.nerdMode ? (
-                              <div className="bg-muted/30 rounded-xl p-3 text-xs">
-                                <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
-                                <p>{m.timeline_nerd_status({ status: step.status })}</p>
-                                <p>
-                                  {m.timeline_nerd_references({
-                                    count: String(step.input.referenceAssetIds.length),
-                                  })}
-                                </p>
-                                <p>
-                                  {m.timeline_nerd_personas({
-                                    count: String(step.input.personaIds.length),
-                                  })}
-                                </p>
-                                <p>
-                                  {m.timeline_nerd_requested_outputs({
-                                    count: String(step.input.outputCount),
-                                  })}
-                                </p>
-                                {step.trace?.requestAt ? (
-                                  <p>
-                                    {m.timeline_nerd_request_started({
-                                      date: formatDate(step.trace.requestAt),
-                                    })}
-                                  </p>
-                                ) : null}
+                                    {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+                                  </Button>
+                                </div>
                               </div>
-                            ) : null}
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <Card size="sm" className="gap-4">
-                          <CardHeader>
-                            <div className="flex items-center justify-between gap-2">
-                              <CardTitle className="text-base">{m.timeline_edit_step()}</CardTitle>
-                              <Badge>{formatDate(step.createdAt)}</Badge>
-                            </div>
-                            <CardDescription>{m.timeline_edit_description()}</CardDescription>
-                          </CardHeader>
-                          <CardContent className="grid gap-3 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium">{m.timeline_source()}</p>
-                              <div className="h-40 overflow-hidden rounded-xl">
-                                {assetsMap.get(step.sourceAssetId) ? (
-                                  <AssetThumb
-                                    asset={assetsMap.get(step.sourceAssetId) as OutputAsset}
-                                    alt={m.timeline_source()}
-                                  />
-                                ) : (
-                                  <div className="bg-muted text-muted-foreground flex h-full items-center justify-center rounded-xl text-xs">
-                                    {m.timeline_missing_source()}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium">{m.timeline_output()}</p>
-                              <div className="h-40 overflow-hidden rounded-xl">
-                                {assetsMap.get(step.outputAssetId) ? (
-                                  <AssetThumb
-                                    asset={assetsMap.get(step.outputAssetId) as OutputAsset}
-                                    alt={m.timeline_output()}
-                                  />
-                                ) : (
-                                  <div className="bg-muted text-muted-foreground flex h-full items-center justify-center rounded-xl text-xs">
-                                    {m.timeline_missing_output()}
-                                  </div>
-                                )}
-                              </div>
+                              <CardDescription>
+                                {m.timeline_model_line({
+                                  model: step.input.modelId,
+                                  resolution: step.input.resolutionPreset,
+                                  ratio: step.input.aspectRatio,
+                                })}
+                              </CardDescription>
                               <div className="flex flex-wrap gap-2">
                                 <Button
                                   size="xs"
                                   variant="outline"
-                                  onClick={() => onRemixFromAsset(step.outputAssetId, step.id)}
+                                  onClick={() => {
+                                    void onCopyPrompt(step)
+                                  }}
                                 >
-                                  {m.timeline_action_remix()}
+                                  {m.timeline_action_copy_prompt()}
                                 </Button>
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  onClick={() => openEditorForAsset(step.outputAssetId)}
-                                >
-                                  {m.timeline_action_edit()}
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  onClick={() => void exportSingleAsset(step.outputAssetId)}
-                                >
-                                  {m.timeline_export_jpg()}
+                                <Button size="xs" variant="outline" onClick={() => onReusePrompt(step)}>
+                                  {m.timeline_action_reuse_prompt()}
                                 </Button>
                               </div>
-                            </div>
-                            {settings.nerdMode ? (
-                              <div className="bg-muted/30 col-span-full rounded-xl p-3 text-xs">
-                                <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
-                                <p>{m.timeline_nerd_rotate({ value: String(step.operations.rotate) })}</p>
-                                <p>
-                                  {m.timeline_nerd_brightness({
-                                    value: String(step.operations.brightness),
-                                  })}
-                                </p>
-                                <p>
-                                  {m.timeline_nerd_contrast({
-                                    value: String(step.operations.contrast),
-                                  })}
-                                </p>
-                                <p>
-                                  {m.timeline_nerd_saturation({
-                                    value: String(step.operations.saturation),
-                                  })}
-                                </p>
-                                <p>{m.timeline_nerd_blur({ value: String(step.operations.blur) })}</p>
-                                <p>
-                                  {m.timeline_nerd_sharpen({
-                                    value: String(step.operations.sharpen),
-                                  })}
-                                </p>
+                            </CardHeader>
+                            <CardContent className="min-w-0 space-y-3 overflow-hidden">
+                              {collapsed ? null : (
+                                <>
+                                  <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
+                                    <p className="text-zinc-400">{m.timeline_prompt()}</p>
+                                    <p className="mt-1 whitespace-pre-wrap">{step.input.prompt}</p>
+                                  </div>
+
+                                  {step.input.negativePrompt ? (
+                                    <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
+                                      <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
+                                      <p className="mt-1 whitespace-pre-wrap">{step.input.negativePrompt}</p>
+                                    </div>
+                                  ) : null}
+
+                                  <div className="flex min-w-0 flex-wrap gap-2">
+                                    <span className="text-muted-foreground text-xs">
+                                      {m.timeline_references_label()}:
+                                    </span>
+                                    {step.input.referenceAssetIds.length === 0 ? (
+                                      <Badge variant="outline">{m.timeline_references_none()}</Badge>
+                                    ) : (
+                                      step.input.referenceAssetIds.map((assetId) => {
+                                        const missingReferences = missingReferenceIdsByStep.get(step.id)
+                                        const isDeleted = missingReferences
+                                          ? missingReferences.includes(assetId)
+                                          : !assetsMap.has(assetId)
+                                        return (
+                                          <Badge key={assetId} variant={isDeleted ? 'destructive' : 'outline'}>
+                                            {isDeleted
+                                              ? m.references_deleted_badge()
+                                              : assetId.slice(0, 8)}
+                                          </Badge>
+                                        )
+                                      })
+                                    )}
+                                  </div>
+                                </>
+                              )}
+
+                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                                {step.outputs.map((output, outputIndex) => {
+                                  const asset = assetsMap.get(output.assetId)
+                                  if (!asset) {
+                                    return null
+                                  }
+
+                                  return (
+                                    <div
+                                      key={output.assetId}
+                                      className="border-border/60 overflow-hidden rounded-2xl border"
+                                    >
+                                      <button
+                                        type="button"
+                                        className="w-full overflow-hidden bg-muted/20"
+                                        style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+                                        onClick={() => {
+                                          openLightbox({
+                                            title: m.timeline_generation_step(),
+                                            initialAssetId: output.assetId,
+                                            items: step.outputs.map((entry, index) => ({
+                                              assetId: entry.assetId,
+                                              label: `${m.timeline_output()} ${index + 1}`,
+                                            })),
+                                          })
+                                        }}
+                                      >
+                                        <AssetThumb asset={asset} alt={m.timeline_output()} />
+                                      </button>
+                                      <div className="space-y-2 p-3">
+                                        <div className="flex flex-wrap gap-2">
+                                          <Button
+                                            size="xs"
+                                            variant="outline"
+                                            onClick={() => onRemixFrom(step, output.assetId)}
+                                          >
+                                            {m.timeline_action_remix()}
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            variant="outline"
+                                            onClick={() => openEditorForAsset(output.assetId)}
+                                          >
+                                            {m.timeline_action_edit()}
+                                          </Button>
+                                          <Button
+                                            size="xs"
+                                            variant="outline"
+                                            onClick={() => void exportSingleAsset(output.assetId)}
+                                          >
+                                            {m.timeline_action_jpg()}
+                                          </Button>
+                                        </div>
+                                        <p className="text-muted-foreground text-xs">
+                                          {outputIndex + 1}. {asset.width}x{asset.height} · {asset.mimeType}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
                               </div>
-                            ) : null}
-                          </CardContent>
-                        </Card>
-                      )}
-                    </li>
-                  ))}
+
+                              {!collapsed && settings.nerdMode ? (
+                                <div className="bg-muted/30 rounded-xl p-3 text-xs">
+                                  <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
+                                  <p>{m.timeline_nerd_status({ status: step.status })}</p>
+                                  <p>
+                                    {m.timeline_nerd_references({
+                                      count: String(step.input.referenceAssetIds.length),
+                                    })}
+                                  </p>
+                                  <p>
+                                    {m.timeline_nerd_personas({
+                                      count: String(step.input.personaIds.length),
+                                    })}
+                                  </p>
+                                  <p>
+                                    {m.timeline_nerd_requested_outputs({
+                                      count: String(step.input.outputCount),
+                                    })}
+                                  </p>
+                                  {step.trace?.fallbackUsed ? <p>{m.timeline_nerd_fallback_used()}</p> : null}
+                                  {step.trace?.requestAt ? (
+                                    <p>
+                                      {m.timeline_nerd_request_started({
+                                        date: formatDate(step.trace.requestAt),
+                                      })}
+                                    </p>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </CardContent>
+                          </Card>
+                        ) : (
+                          <Card size="sm" className="gap-4">
+                            <CardHeader>
+                              <div className="flex items-center justify-between gap-2">
+                                <CardTitle className="text-base">{m.timeline_edit_step()}</CardTitle>
+                                <div className="flex items-center gap-2">
+                                  <Badge>{formatDate(step.createdAt)}</Badge>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => toggleStepCollapsed(step.id)}
+                                  >
+                                    {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+                                  </Button>
+                                </div>
+                              </div>
+                              {collapsed ? null : (
+                                <CardDescription>{m.timeline_edit_description()}</CardDescription>
+                              )}
+                            </CardHeader>
+                            <CardContent className="grid gap-3 md:grid-cols-2">
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium">{m.timeline_source()}</p>
+                                {assetsMap.get(step.sourceAssetId) ? (
+                                  <button
+                                    type="button"
+                                    className="w-full overflow-hidden rounded-xl bg-muted/20"
+                                    style={{
+                                      aspectRatio: `${(assetsMap.get(step.sourceAssetId) as OutputAsset).width} / ${(assetsMap.get(step.sourceAssetId) as OutputAsset).height}`,
+                                    }}
+                                    onClick={() => {
+                                      openLightbox({
+                                        title: m.timeline_edit_step(),
+                                        initialAssetId: step.sourceAssetId,
+                                        items: [
+                                          {
+                                            assetId: step.sourceAssetId,
+                                            label: m.timeline_source(),
+                                          },
+                                        ],
+                                      })
+                                    }}
+                                  >
+                                    <AssetThumb
+                                      asset={assetsMap.get(step.sourceAssetId) as OutputAsset}
+                                      alt={m.timeline_source()}
+                                    />
+                                  </button>
+                                ) : (
+                                  <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
+                                    {m.timeline_missing_source()}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="space-y-2">
+                                <p className="text-xs font-medium">{m.timeline_output()}</p>
+                                {assetsMap.get(step.outputAssetId) ? (
+                                  <button
+                                    type="button"
+                                    className="w-full overflow-hidden rounded-xl bg-muted/20"
+                                    style={{
+                                      aspectRatio: `${(assetsMap.get(step.outputAssetId) as OutputAsset).width} / ${(assetsMap.get(step.outputAssetId) as OutputAsset).height}`,
+                                    }}
+                                    onClick={() => {
+                                      openLightbox({
+                                        title: m.timeline_edit_step(),
+                                        initialAssetId: step.outputAssetId,
+                                        items: [
+                                          {
+                                            assetId: step.outputAssetId,
+                                            label: m.timeline_output(),
+                                          },
+                                        ],
+                                      })
+                                    }}
+                                  >
+                                    <AssetThumb
+                                      asset={assetsMap.get(step.outputAssetId) as OutputAsset}
+                                      alt={m.timeline_output()}
+                                    />
+                                  </button>
+                                ) : (
+                                  <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
+                                    {m.timeline_missing_output()}
+                                  </div>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => onRemixFromAsset(step.outputAssetId, step.id)}
+                                  >
+                                    {m.timeline_action_remix()}
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => openEditorForAsset(step.outputAssetId)}
+                                  >
+                                    {m.timeline_action_edit()}
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => void exportSingleAsset(step.outputAssetId)}
+                                  >
+                                    {m.timeline_export_jpg()}
+                                  </Button>
+                                </div>
+                              </div>
+                              {!collapsed && settings.nerdMode ? (
+                                <div className="bg-muted/30 col-span-full rounded-xl p-3 text-xs">
+                                  <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
+                                  <p>{m.timeline_nerd_rotate({ value: String(step.operations.rotate) })}</p>
+                                  <p>
+                                    {m.timeline_nerd_brightness({
+                                      value: String(step.operations.brightness),
+                                    })}
+                                  </p>
+                                  <p>
+                                    {m.timeline_nerd_contrast({
+                                      value: String(step.operations.contrast),
+                                    })}
+                                  </p>
+                                  <p>
+                                    {m.timeline_nerd_saturation({
+                                      value: String(step.operations.saturation),
+                                    })}
+                                  </p>
+                                  <p>{m.timeline_nerd_blur({ value: String(step.operations.blur) })}</p>
+                                  <p>
+                                    {m.timeline_nerd_sharpen({
+                                      value: String(step.operations.sharpen),
+                                    })}
+                                  </p>
+                                </div>
+                              ) : null}
+                            </CardContent>
+                          </Card>
+                        )}
+                      </li>
+                    )
+                  })}
                 </ol>
               )}
             </CardContent>
@@ -1046,6 +1377,17 @@ function ProjectWorkshopPage() {
               : [...current, personaId],
           )
         }}
+        onOpenLightbox={(context) => {
+          openLightbox(context)
+        }}
+      />
+
+      <ImageLightboxModal
+        open={Boolean(lightboxContext)}
+        title={lightboxContext?.title ?? m.timeline_output()}
+        items={lightboxGalleryItems}
+        initialAssetId={lightboxContext?.initialAssetId}
+        onClose={() => setLightboxContext(null)}
       />
     </main>
   )

@@ -7,9 +7,10 @@ interface AssetThumbProps {
   asset: OutputAsset
   alt: string
   className?: string
+  imageClassName?: string
 }
 
-export function AssetThumb({ asset, alt, className }: AssetThumbProps) {
+export function AssetThumb({ asset, alt, className, imageClassName }: AssetThumbProps) {
   const src = useObjectUrl(asset.blob)
 
   if (!src) {
@@ -29,15 +30,9 @@ export function AssetThumb({ asset, alt, className }: AssetThumbProps) {
     <div className={cn('relative h-full w-full overflow-hidden rounded-xl bg-muted/20', className)}>
       <img
         src={src}
-        alt=""
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 h-full w-full scale-110 object-cover blur-xl opacity-45"
-      />
-      <img
-        src={src}
         alt={alt}
         loading="lazy"
-        className="relative z-10 h-full w-full object-contain"
+        className={cn('relative h-full w-full object-contain', imageClassName)}
       />
     </div>
   )
