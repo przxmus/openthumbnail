@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   EditOperations,
@@ -84,24 +84,33 @@ export function useWorkshopProject(projectId: string) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [quotaState, setQuotaState] = useState<QuotaCleanupState | null>(null)
+  const didLoadRef = useRef(false)
 
   const settings = useMemo(() => loadSettings(), [projectId])
 
   const reload = useCallback(async () => {
-    setLoading(true)
+    if (!didLoadRef.current) {
+      setLoading(true)
+    }
 
     try {
       await ensureSchemaVersion()
-      const [projectValue, stepsValue, assetsValue, personasValue] = await Promise.all([
+      const [projectValue, stepsValue, projectAssets, personasValue] = await Promise.all([
         getProjectById(projectId),
         getProjectSteps(projectId),
         getProjectAssets(projectId),
         listPersonas(),
       ])
 
+      const personaAssetIds = Array.from(
+        new Set(personasValue.flatMap((persona) => persona.referenceAssetIds)),
+      )
+      const personaAssets = personaAssetIds.length ? await getAssets(personaAssetIds) : []
+      const allAssets = [...projectAssets, ...personaAssets]
+
       setProject(projectValue ?? null)
       setSteps(stepsValue.sort(byStepOrder))
-      setAssets(assetsValue)
+      setAssets(allAssets)
       setPersonas(personasValue)
       setError(null)
 
@@ -118,6 +127,7 @@ export function useWorkshopProject(projectId: string) {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Failed to load project data')
     } finally {
+      didLoadRef.current = true
       setLoading(false)
     }
   }, [projectId, settings.openRouterApiKey])

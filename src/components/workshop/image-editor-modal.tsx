@@ -24,7 +24,7 @@ interface SliderConfig {
 }
 
 const sliderClassName =
-  'accent-primary h-2 w-full rounded-full overflow-hidden'
+  'range-input h-2.5 w-full'
 
 function useObjectUrl(blob: Blob | null) {
   const [url, setUrl] = useState<string | null>(null)

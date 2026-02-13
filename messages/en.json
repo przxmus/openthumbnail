@@ -144,5 +144,6 @@
   "asset_preview_unavailable": "Preview unavailable",
   "common_unknown": "unknown",
   "common_none": "none",
-  "common_close": "Close"
+  "common_close": "Close",
+  "generation_remix_asset_selected": "Selected image will be used as remix reference."
 }

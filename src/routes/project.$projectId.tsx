@@ -62,7 +62,7 @@ function getModelCapability(models: Array<ModelCapability>, modelId: string) {
 }
 
 function sliderClassName() {
-  return 'accent-primary h-2 w-full min-w-0 rounded-full overflow-hidden'
+  return 'range-input h-2.5 w-full min-w-0'
 }
 
 function ProjectWorkshopPage() {
@@ -138,6 +138,7 @@ function ProjectWorkshopPage() {
   const selectedEditorAsset = editorSourceAssetId
     ? assetsMap.get(editorSourceAssetId) ?? null
     : null
+  const remixPreviewAsset = remixOfAssetId ? assetsMap.get(remixOfAssetId) ?? null : null
 
   useEffect(() => {
     if (!project) {
@@ -498,11 +499,23 @@ function ProjectWorkshopPage() {
               </Button>
 
               {remixOfStepId ? (
-                <div className="bg-muted/60 text-muted-foreground rounded-xl px-3 py-2 text-xs">
-                  {m.generation_remix_active({ stepId: remixOfStepId })}{' '}
+                <div className="bg-muted/60 text-muted-foreground rounded-xl p-2 text-xs">
+                  <div className="flex items-start gap-2">
+                    {remixPreviewAsset ? (
+                      <div className="h-14 w-20 shrink-0 overflow-hidden rounded-lg border border-border/70">
+                        <AssetThumb asset={remixPreviewAsset} alt={m.timeline_output()} />
+                      </div>
+                    ) : null}
+                    <div className="min-w-0">
+                      <p>{m.generation_remix_active({ stepId: remixOfStepId })}</p>
+                      {remixOfAssetId ? (
+                        <p className="text-muted-foreground/90">{m.generation_remix_asset_selected()}</p>
+                      ) : null}
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    className="text-foreground underline"
+                    className="text-foreground mt-2 underline"
                     onClick={() => {
                       setRemixOfStepId(undefined)
                       setRemixOfAssetId(undefined)
@@ -631,26 +644,6 @@ function ProjectWorkshopPage() {
                   {m.personas_open_manager()}
                 </Button>
               </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>{m.editor_title()}</CardTitle>
-              <CardDescription>{m.editor_description()}</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-2">
-              <Button
-                variant="outline"
-                disabled={!outputAssets.length}
-                onClick={() => {
-                  const latest = outputAssets[outputAssets.length - 1]
-                  openEditorForAsset(latest.id)
-                }}
-              >
-                {m.editor_open()}
-              </Button>
-              <p className="text-muted-foreground text-sm">{m.editor_no_source()}</p>
             </CardContent>
           </Card>
 
