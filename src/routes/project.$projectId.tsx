@@ -411,8 +411,12 @@ function ProjectWorkshopPage() {
     )
   }
 
-  const onCopyPrompt = async (step: GenerationStep) => {
-    await navigator.clipboard.writeText(step.input.prompt)
+  const onCopyText = async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+    } catch {
+      // no-op: clipboard may be unavailable in some contexts
+    }
   }
 
   const onReusePrompt = (step: GenerationStep) => {
@@ -1029,15 +1033,6 @@ function ProjectWorkshopPage() {
                                 })}
                               </CardDescription>
                               <div className="flex flex-wrap gap-2">
-                                <Button
-                                  size="xs"
-                                  variant="outline"
-                                  onClick={() => {
-                                    void onCopyPrompt(step)
-                                  }}
-                                >
-                                  {m.timeline_action_copy_prompt()}
-                                </Button>
                                 <Button size="xs" variant="outline" onClick={() => onReusePrompt(step)}>
                                   {m.timeline_action_reuse_prompt()}
                                 </Button>
@@ -1047,13 +1042,37 @@ function ProjectWorkshopPage() {
                               {collapsed ? null : (
                                 <>
                                   <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
-                                    <p className="text-zinc-400">{m.timeline_prompt()}</p>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-zinc-400">{m.timeline_prompt()}</p>
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        className="border-zinc-500/60 bg-transparent text-zinc-100 hover:bg-zinc-700/70"
+                                        onClick={() => {
+                                          void onCopyText(step.input.prompt)
+                                        }}
+                                      >
+                                        {m.timeline_action_copy_prompt()}
+                                      </Button>
+                                    </div>
                                     <p className="mt-1 whitespace-pre-wrap">{step.input.prompt}</p>
                                   </div>
 
                                   {step.input.negativePrompt ? (
                                     <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
-                                      <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
+                                        <Button
+                                          size="xs"
+                                          variant="outline"
+                                          className="border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100"
+                                          onClick={() => {
+                                            void onCopyText(step.input.negativePrompt ?? '')
+                                          }}
+                                        >
+                                          {m.timeline_action_copy_negative_prompt()}
+                                        </Button>
+                                      </div>
                                       <p className="mt-1 whitespace-pre-wrap">{step.input.negativePrompt}</p>
                                     </div>
                                   ) : null}
