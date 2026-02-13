@@ -3,7 +3,7 @@ import { OpenRouter } from '@openrouter/sdk'
 import type { ModelCapability } from '@/types/workshop'
 
 const CACHE_KEY = 'openthumbnail.model-catalog.v1'
-const CACHE_TTL_MS = 1000 * 60 * 30
+const CACHE_TTL_MS = 1000 * 60 * 10
 
 interface CachePayload {
   fetchedAt: number
@@ -49,6 +49,28 @@ function isLikelyNegativePromptCapable(model: {
   return /(flux|stable|sd|imagen|ideogram|recraft|playground|image)/.test(text)
 }
 
+function isImageGenerationModel(model: {
+  id: string
+  name: string
+  description?: string
+  architecture?: {
+    modality?: string | null
+    outputModalities?: Array<string>
+    inputModalities?: Array<string>
+  }
+}) {
+  const outputModalities = model.architecture?.outputModalities ?? []
+  if (outputModalities.includes('image')) {
+    return true
+  }
+
+  const architectureModality = (model.architecture?.modality ?? '').toLowerCase()
+  if (architectureModality === 'image') {
+    return true
+  }
+  return false
+}
+
 export function getCachedModelCatalog() {
   const cache = parseCache()
   if (!cache) {
@@ -63,37 +85,40 @@ export function getCachedModelCatalog() {
 }
 
 export async function listOpenRouterImageModels(apiKey: string) {
-  const cached = getCachedModelCatalog()
-
-  if (cached) {
-    return cached
-  }
-
+  const cached = parseCache()
   const client = new OpenRouter({ apiKey })
-  const response = await client.models.list()
 
-  const now = Date.now()
+  try {
+    const response = await client.models.list()
+    const now = Date.now()
 
-  const models = response.data
-    .filter((model) => model.architecture.outputModalities.includes('image'))
-    .map<ModelCapability>((model) => {
-      const expired = Boolean(
-        model.expirationDate && new Date(model.expirationDate).getTime() < now,
-      )
+    const models = response.data
+      .filter((model) => isImageGenerationModel(model))
+      .map<ModelCapability>((model) => {
+        const expired = Boolean(
+          model.expirationDate && new Date(model.expirationDate).getTime() < now,
+        )
 
-      return {
-        id: model.id,
-        name: model.name,
-        supportsImages: true,
-        supportsReferences: model.architecture.inputModalities.includes('image'),
-        supportsNegativePrompt: isLikelyNegativePromptCapable(model),
-        maxOutputs: undefined,
-        availability: expired ? 'unavailable' : 'available',
-        description: model.description,
-      }
-    })
-    .sort((a, b) => a.name.localeCompare(b.name))
+        return {
+          id: model.id,
+          name: model.name,
+          supportsImages: true,
+          supportsReferences: model.architecture.inputModalities.includes('image'),
+          supportsNegativePrompt: isLikelyNegativePromptCapable(model),
+          maxOutputs: undefined,
+          availability: expired ? 'unavailable' : 'available',
+          description: model.description,
+        }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
 
-  saveCache(models)
-  return models
+    saveCache(models)
+    return models
+  } catch (error) {
+    if (cached && cached.models.length) {
+      return cached.models
+    }
+
+    throw error
+  }
 }

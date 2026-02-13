@@ -289,6 +289,14 @@ function ProjectWorkshopPage() {
     setRemixOfAssetId(outputAssetId)
   }
 
+  const onRemixFromAsset = (outputAssetId: string, stepId?: string) => {
+    setSelectedReferenceIds((current) =>
+      current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+    )
+    setRemixOfStepId(stepId)
+    setRemixOfAssetId(outputAssetId)
+  }
+
   const openEditorForAsset = (assetId: string) => {
     setEditorSourceAssetId(assetId)
     setEditorOperations(DEFAULT_EDITOR_OPS)
@@ -395,22 +403,29 @@ function ProjectWorkshopPage() {
             </CardHeader>
             <CardContent className="grid min-w-0 gap-3 overflow-hidden">
               <Label htmlFor="model">{m.generation_model_label()}</Label>
-              <select
-                id="model"
-                value={modelId}
-                className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
-                onChange={(event) => setModelId(event.target.value)}
-              >
-                <option value="">{m.generation_model_placeholder()}</option>
-                {models.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.name}
-                    {model.availability === 'unavailable'
-                      ? ` ${m.generation_model_unavailable_suffix()}`
-                      : ''}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="model"
+                  value={modelId}
+                  className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                  onChange={(event) => setModelId(event.target.value)}
+                >
+                  <option value="">{m.generation_model_placeholder()}</option>
+                  {models.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                      {model.availability === 'unavailable'
+                        ? ` ${m.generation_model_unavailable_suffix()}`
+                        : ''}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                    <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
+                  </svg>
+                </span>
+              </div>
 
               {unavailableModelSelected ? (
                 <p className="text-destructive text-xs">{m.generation_model_unavailable()}</p>
@@ -439,51 +454,69 @@ function ProjectWorkshopPage() {
               <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 <div className="grid min-w-0 gap-1">
                   <Label htmlFor="ratio">{m.generation_ratio_label()}</Label>
-                  <select
-                    id="ratio"
-                    value={aspectRatio}
-                    className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
-                    onChange={(event) => {
-                      setAspectRatio(event.target.value as typeof aspectRatio)
-                    }}
-                  >
-                    {ASPECT_RATIOS.map((ratio) => (
-                      <option key={ratio} value={ratio}>
-                        {ratio}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative">
+                    <select
+                      id="ratio"
+                      value={aspectRatio}
+                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                      onChange={(event) => {
+                        setAspectRatio(event.target.value as typeof aspectRatio)
+                      }}
+                    >
+                      {ASPECT_RATIOS.map((ratio) => (
+                        <option key={ratio} value={ratio}>
+                          {ratio}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                        <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
+                      </svg>
+                    </span>
+                  </div>
                 </div>
                 <div className="grid min-w-0 gap-1">
                   <Label htmlFor="resolution">{m.generation_resolution_label()}</Label>
-                  <select
-                    id="resolution"
-                    value={resolutionPreset}
-                    className="border-input bg-input/30 h-9 w-full min-w-0 rounded-4xl border px-3 text-sm"
-                    onChange={(event) => {
-                      setResolutionPreset(event.target.value as typeof resolutionPreset)
-                    }}
-                  >
-                    <option value="720p">720p</option>
-                    <option value="1080p">1080p</option>
-                  </select>
+                  <div className="relative">
+                    <select
+                      id="resolution"
+                      value={resolutionPreset}
+                      className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                      onChange={(event) => {
+                        setResolutionPreset(event.target.value as typeof resolutionPreset)
+                      }}
+                    >
+                      <option value="720p">720p</option>
+                      <option value="1080p">1080p</option>
+                    </select>
+                    <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                      <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                        <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
+                      </svg>
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid min-w-0 gap-1">
-                <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
-                <input
-                  id="count"
-                  type="range"
-                  min={1}
-                  max={maxOutputs}
-                  value={outputCount}
-                  className={sliderClassName()}
-                  onChange={(event) => {
-                    setOutputCount(Number(event.target.value))
-                  }}
-                />
-              </div>
+              {maxOutputs > 1 ? (
+                <div className="grid min-w-0 gap-1">
+                  <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
+                  <input
+                    id="count"
+                    type="range"
+                    min={1}
+                    max={maxOutputs}
+                    value={outputCount}
+                    className={sliderClassName()}
+                    onChange={(event) => {
+                      setOutputCount(Number(event.target.value))
+                    }}
+                  />
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-xs">{m.generation_outputs_single()}</p>
+              )}
 
               <Button
                 disabled={busy || !modelId || unavailableModelSelected || !prompt.trim()}
@@ -900,6 +933,20 @@ function ProjectWorkshopPage() {
                                 )}
                               </div>
                               <div className="flex flex-wrap gap-2">
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  onClick={() => onRemixFromAsset(step.outputAssetId, step.id)}
+                                >
+                                  {m.timeline_action_remix()}
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  onClick={() => openEditorForAsset(step.outputAssetId)}
+                                >
+                                  {m.timeline_action_edit()}
+                                </Button>
                                 <Button
                                   size="xs"
                                   variant="outline"

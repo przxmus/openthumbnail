@@ -83,37 +83,51 @@ function SettingsPage() {
           <CardContent className="grid gap-4">
             <div className="grid gap-2">
               <Label htmlFor="theme-mode">{m.settings_theme_label()}</Label>
-              <select
-                id="theme-mode"
-                value={settings.themeMode}
-                className="border-input bg-input/30 h-9 rounded-4xl border px-3 text-sm"
-                onChange={(event) => {
-                  updateSettings({
-                    themeMode: event.target.value as 'light' | 'dark' | 'system',
-                  })
-                }}
-              >
-                {THEME_MODES.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {themeLabel(mode)}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  id="theme-mode"
+                  value={settings.themeMode}
+                  className="border-input bg-input/30 h-9 w-full appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                  onChange={(event) => {
+                    updateSettings({
+                      themeMode: event.target.value as 'light' | 'dark' | 'system',
+                    })
+                  }}
+                >
+                  {THEME_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {themeLabel(mode)}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                    <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
+                  </svg>
+                </span>
+              </div>
             </div>
 
             <div className="grid gap-2">
               <Label htmlFor="locale">{m.settings_locale_label()}</Label>
-              <select
-                id="locale"
-                value={settings.locale}
-                className="border-input bg-input/30 h-9 rounded-4xl border px-3 text-sm"
-                onChange={(event) => {
-                  updateSettings({ locale: event.target.value as 'en' | 'pl' })
-                }}
-              >
-                <option value="en">{localeLabel('en')}</option>
-                <option value="pl">{localeLabel('pl')}</option>
-              </select>
+              <div className="relative">
+                <select
+                  id="locale"
+                  value={settings.locale}
+                  className="border-input bg-input/30 h-9 w-full appearance-none rounded-4xl border pl-3 pr-10 text-sm"
+                  onChange={(event) => {
+                    updateSettings({ locale: event.target.value as 'en' | 'pl' })
+                  }}
+                >
+                  <option value="en">{localeLabel('en')}</option>
+                  <option value="pl">{localeLabel('pl')}</option>
+                </select>
+                <span className="text-muted-foreground pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">
+                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+                    <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
+                  </svg>
+                </span>
+              </div>
             </div>
 
             <label className="flex items-center gap-3">

@@ -145,5 +145,6 @@
   "timeline_nerd_blur": "Rozmycie: {value}",
   "timeline_nerd_sharpen": "Wyostrzenie: {value}",
   "asset_preview_unavailable": "Podgląd niedostępny",
-  "generation_remix_asset_selected": "Wybrany obraz zostanie użyty jako referencja do remixa."
+  "generation_remix_asset_selected": "Wybrany obraz zostanie użyty jako referencja do remixa.",
+  "generation_outputs_single": "Wybrany model wspiera tylko pojedynczy wynik."
 }

@@ -145,5 +145,6 @@
   "common_unknown": "unknown",
   "common_none": "none",
   "common_close": "Close",
-  "generation_remix_asset_selected": "Selected image will be used as remix reference."
+  "generation_remix_asset_selected": "Selected image will be used as remix reference.",
+  "generation_outputs_single": "Selected model supports a single output only."
 }
