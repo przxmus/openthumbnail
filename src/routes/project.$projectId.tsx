@@ -819,12 +819,12 @@ function ProjectWorkshopPage() {
 
   return (
     <main
-      className="from-background via-background to-muted/20 min-h-screen bg-gradient-to-br"
+      className="from-background via-background to-muted/20 flex h-screen flex-col overflow-hidden bg-gradient-to-br"
       onPaste={(event) => void onPasteReferences(event)}
     >
       {/* ─── Top bar ─────────────────────────────────────────────── */}
-      <header className="bg-card/80 sticky top-0 z-30 border-b backdrop-blur-lg">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-2 md:px-8">
+      <header className="bg-card/80 z-30 flex-none border-b backdrop-blur-lg">
+        <div className="flex items-center gap-3 px-4 py-2 md:px-8">
           <Button
             size="sm"
             variant="ghost"
@@ -895,647 +895,703 @@ function ProjectWorkshopPage() {
         </div>
       </header>
 
-      {/* ─── Content ─────────────────────────────────────────────── */}
-      <div className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-4 md:px-8">
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-          {/* ── Left sidebar ───────────────────────────────────────── */}
-          <aside className="space-y-3 xl:sticky xl:top-16">
-            {/* Generation card */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  {m.generation_title()}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  {m.generation_description()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid min-w-0 gap-3 overflow-hidden pt-0">
+      {/* ─── Content: fixed viewport, two independent scroll regions ─ */}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {/* ── Left sidebar ─ independently scrollable ────────────── */}
+        <aside className="pretty-scroll hidden w-[340px] flex-none space-y-3 overflow-y-auto border-r p-4 xl:block">
+          {/* Generation card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                {m.generation_title()}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {m.generation_description()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid min-w-0 gap-3 overflow-hidden pt-0">
+              <div className="grid gap-1.5">
+                <Label htmlFor="model" className="text-xs">
+                  {m.generation_model_label()}
+                </Label>
+                <Select
+                  value={modelId}
+                  onValueChange={(val) => {
+                    if (val !== null) setModelId(val)
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue
+                      placeholder={m.generation_model_placeholder()}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.name}
+                        {model.availability === 'unavailable'
+                          ? ` ${m.generation_model_unavailable_suffix()}`
+                          : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {unavailableModelSelected ? (
+                <p className="text-destructive text-xs font-medium">
+                  {m.generation_model_unavailable()}
+                </p>
+              ) : null}
+
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
                 <div className="grid gap-1.5">
-                  <Label htmlFor="model" className="text-xs">
-                    {m.generation_model_label()}
+                  <Label className="text-xs">
+                    {m.generation_ratio_label()}
                   </Label>
                   <Select
-                    value={modelId}
+                    value={aspectRatio}
                     onValueChange={(val) => {
-                      if (val !== null) setModelId(val)
+                      if (val !== null)
+                        setAspectRatio(val as typeof aspectRatio)
                     }}
                   >
-                    <SelectTrigger>
-                      <SelectValue
-                        placeholder={m.generation_model_placeholder()}
-                      />
+                    <SelectTrigger size="sm">
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {models.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                          {model.availability === 'unavailable'
-                            ? ` ${m.generation_model_unavailable_suffix()}`
-                            : ''}
+                      {ASPECT_RATIOS.map((ratio) => (
+                        <SelectItem key={ratio} value={ratio}>
+                          {ratio}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
-
-                {unavailableModelSelected ? (
-                  <p className="text-destructive text-xs font-medium">
-                    {m.generation_model_unavailable()}
-                  </p>
-                ) : null}
-
-                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">
-                      {m.generation_ratio_label()}
-                    </Label>
-                    <Select
-                      value={aspectRatio}
-                      onValueChange={(val) => {
-                        if (val !== null)
-                          setAspectRatio(val as typeof aspectRatio)
-                      }}
-                    >
-                      <SelectTrigger size="sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ASPECT_RATIOS.map((ratio) => (
-                          <SelectItem key={ratio} value={ratio}>
-                            {ratio}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label className="text-xs">
-                      {m.generation_resolution_label()}
-                    </Label>
-                    <Select
-                      value={resolutionPreset}
-                      onValueChange={(val) => {
-                        if (val !== null)
-                          setResolutionPreset(val as typeof resolutionPreset)
-                      }}
-                    >
-                      <SelectTrigger size="sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="720p">720p</SelectItem>
-                        <SelectItem value="1080p">1080p</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
                 <div className="grid gap-1.5">
                   <Label className="text-xs">
-                    {m.generation_outputs_label({
-                      count: String(outputCount),
-                    })}
+                    {m.generation_resolution_label()}
                   </Label>
-                  <input
-                    type="range"
-                    min={1}
-                    max={maxOutputs}
-                    value={outputCount}
-                    className="range-input h-2.5 w-full min-w-0"
-                    onChange={(event) =>
-                      setOutputCount(Number(event.target.value))
-                    }
-                  />
-                  <p className="text-muted-foreground text-[11px]">
-                    {m.generation_outputs_experimental()}
-                  </p>
+                  <Select
+                    value={resolutionPreset}
+                    onValueChange={(val) => {
+                      if (val !== null)
+                        setResolutionPreset(val as typeof resolutionPreset)
+                    }}
+                  >
+                    <SelectTrigger size="sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="720p">720p</SelectItem>
+                      <SelectItem value="1080p">1080p</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+              </div>
 
-                <Button
-                  className="w-full"
-                  disabled={
-                    busy ||
-                    !modelId ||
-                    unavailableModelSelected ||
-                    !prompt.trim()
+              <div className="grid gap-1.5">
+                <Label className="text-xs">
+                  {m.generation_outputs_label({
+                    count: String(outputCount),
+                  })}
+                </Label>
+                <input
+                  type="range"
+                  min={1}
+                  max={maxOutputs}
+                  value={outputCount}
+                  className="range-input h-2.5 w-full min-w-0"
+                  onChange={(event) =>
+                    setOutputCount(Number(event.target.value))
                   }
-                  onClick={() => void onGenerate()}
-                >
-                  {busy
-                    ? m.generation_button_busy()
-                    : remixOfStepId
-                      ? m.generation_button_remix()
-                      : m.generation_button()}
-                </Button>
+                />
+                <p className="text-muted-foreground text-[11px]">
+                  {m.generation_outputs_experimental()}
+                </p>
+              </div>
 
-                {remixOfStepId ? (
-                  <div className="bg-primary/5 border-primary/20 rounded-xl border p-2.5 text-xs">
-                    <div className="flex items-start gap-2">
-                      {remixPreviewAsset ? (
-                        <button
-                          type="button"
-                          className="border-border/70 h-14 w-20 shrink-0 overflow-hidden rounded-lg border"
-                          onClick={() => {
-                            if (!remixOfAssetId) return
-                            openLightbox({
-                              title: m.generation_title(),
-                              initialAssetId: remixOfAssetId,
-                              items: [
-                                {
-                                  assetId: remixOfAssetId,
-                                  label: m.timeline_output(),
-                                },
-                              ],
-                            })
-                          }}
-                        >
-                          <AssetThumb
-                            asset={remixPreviewAsset}
-                            alt={m.timeline_output()}
-                          />
-                        </button>
-                      ) : null}
-                      <div className="min-w-0">
-                        <p className="text-foreground font-medium">
-                          {m.generation_remix_active({
-                            stepId: remixOfStepId,
-                          })}
-                        </p>
-                        {remixOfAssetId ? (
-                          <p className="text-muted-foreground">
-                            {m.generation_remix_asset_selected()}
-                          </p>
-                        ) : null}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="text-primary mt-2 text-xs underline"
-                      onClick={() => {
-                        setRemixOfStepId(undefined)
-                        setRemixOfAssetId(undefined)
-                        if (remixSnapshot) {
-                          setModelId(remixSnapshot.modelId)
-                          setPrompt(remixSnapshot.prompt)
-                          setNegativePrompt(remixSnapshot.negativePrompt)
-                          setAspectRatio(remixSnapshot.aspectRatio)
-                          setResolutionPreset(remixSnapshot.resolutionPreset)
-                          setOutputCount(remixSnapshot.outputCount)
-                          setSelectedReferenceIds(
-                            remixSnapshot.selectedReferenceIds,
-                          )
-                          setSelectedPersonaIds(
-                            remixSnapshot.selectedPersonaIds,
-                          )
-                          setRemixSnapshot(null)
-                        }
-                      }}
-                    >
-                      {m.generation_remix_clear()}
-                    </button>
-                  </div>
-                ) : null}
-              </CardContent>
-            </Card>
+              <Button
+                className="w-full"
+                disabled={
+                  busy || !modelId || unavailableModelSelected || !prompt.trim()
+                }
+                onClick={() => void onGenerate()}
+              >
+                {busy
+                  ? m.generation_button_busy()
+                  : remixOfStepId
+                    ? m.generation_button_remix()
+                    : m.generation_button()}
+              </Button>
 
-            {/* References card */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  {m.references_title()}
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  {m.references_description()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="grid gap-3 pt-0">
-                <div
-                  className="border-border/50 hover:border-primary/40 bg-muted/10 group/drop cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-colors"
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => void onDropReferences(event)}
-                  onClick={() => referenceInputRef.current?.click()}
-                >
-                  <div className="text-muted-foreground text-sm">
-                    {m.references_drop_hint()}
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-2"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      referenceInputRef.current?.click()
-                    }}
-                  >
-                    {m.references_select_files()}
-                  </Button>
-                  <input
-                    ref={referenceInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => {
-                      const files = Array.from(event.target.files ?? [])
-                      void onReferenceFiles(files)
-                      event.target.value = ''
-                    }}
-                  />
-                </div>
-
-                <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <Input
-                    placeholder={m.references_youtube_placeholder()}
-                    value={youtubeUrl}
-                    onChange={(event) => setYoutubeUrl(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter' || !youtubeUrl.trim()) return
-                      event.preventDefault()
-                      void onImportYoutube()
-                    }}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void onImportYoutube()}
-                  >
-                    {m.references_youtube_import()}
-                  </Button>
-                </div>
-
-                {supportsReferences ? null : (
-                  <p className="text-muted-foreground bg-muted/40 rounded-lg p-2 text-xs">
-                    {m.references_model_unsupported()}
-                  </p>
-                )}
-
-                <div className="pretty-scroll max-h-56 min-w-0 space-y-1.5 overflow-auto pr-1">
-                  {referenceAssets.length === 0 ? (
-                    <p className="text-muted-foreground border-border/50 rounded-xl border border-dashed p-3 text-center text-sm">
-                      {m.references_empty()}
-                    </p>
-                  ) : null}
-
-                  {referenceAssets.map((asset) => {
-                    const selected = selectedReferenceIds.includes(asset.id)
-                    return (
+              {remixOfStepId ? (
+                <div className="bg-primary/5 border-primary/20 rounded-xl border p-2.5 text-xs">
+                  <div className="flex items-start gap-2">
+                    {remixPreviewAsset ? (
                       <button
-                        key={asset.id}
                         type="button"
-                        className={`grid w-full min-w-0 grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border p-1.5 text-left transition-all ${
-                          selected
-                            ? 'border-primary/60 bg-primary/5 ring-primary/20 ring-1'
-                            : 'border-border/50 bg-card hover:border-primary/30'
-                        }`}
+                        className="border-border/70 h-14 w-20 shrink-0 overflow-hidden rounded-lg border"
                         onClick={() => {
-                          setSelectedReferenceIds((current) =>
-                            current.includes(asset.id)
-                              ? current.filter((id) => id !== asset.id)
-                              : [...current, asset.id],
-                          )
+                          if (!remixOfAssetId) return
+                          openLightbox({
+                            title: m.generation_title(),
+                            initialAssetId: remixOfAssetId,
+                            items: [
+                              {
+                                assetId: remixOfAssetId,
+                                label: m.timeline_output(),
+                              },
+                            ],
+                          })
                         }}
                       >
-                        <button
-                          type="button"
-                          className="h-14 w-[72px] overflow-hidden rounded-lg"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            openLightbox({
-                              title: m.references_title(),
-                              initialAssetId: asset.id,
-                              items: referenceAssets.map((entry) => ({
-                                assetId: entry.id,
-                                label: m.references_title(),
-                              })),
-                            })
-                          }}
-                        >
-                          <AssetThumb
-                            asset={asset}
-                            alt={m.references_title()}
-                          />
-                        </button>
-                        <div className="min-w-0 text-xs">
-                          <p className="truncate font-medium">{asset.kind}</p>
-                          <p className="text-muted-foreground truncate">
-                            {asset.width}x{asset.height}
+                        <AssetThumb
+                          asset={remixPreviewAsset}
+                          alt={m.timeline_output()}
+                        />
+                      </button>
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="text-foreground font-medium">
+                        {m.generation_remix_active({
+                          stepId: remixOfStepId,
+                        })}
+                      </p>
+                      {remixOfAssetId ? (
+                        <p className="text-muted-foreground">
+                          {m.generation_remix_asset_selected()}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-primary mt-2 text-xs underline"
+                    onClick={() => {
+                      setRemixOfStepId(undefined)
+                      setRemixOfAssetId(undefined)
+                      if (remixSnapshot) {
+                        setModelId(remixSnapshot.modelId)
+                        setPrompt(remixSnapshot.prompt)
+                        setNegativePrompt(remixSnapshot.negativePrompt)
+                        setAspectRatio(remixSnapshot.aspectRatio)
+                        setResolutionPreset(remixSnapshot.resolutionPreset)
+                        setOutputCount(remixSnapshot.outputCount)
+                        setSelectedReferenceIds(
+                          remixSnapshot.selectedReferenceIds,
+                        )
+                        setSelectedPersonaIds(remixSnapshot.selectedPersonaIds)
+                        setRemixSnapshot(null)
+                      }
+                    }}
+                  >
+                    {m.generation_remix_clear()}
+                  </button>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* References card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">
+                {m.references_title()}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                {m.references_description()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-3 pt-0">
+              <div
+                className="border-border/50 hover:border-primary/40 bg-muted/10 group/drop cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-colors"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => void onDropReferences(event)}
+                onClick={() => referenceInputRef.current?.click()}
+              >
+                <div className="text-muted-foreground text-sm">
+                  {m.references_drop_hint()}
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    referenceInputRef.current?.click()
+                  }}
+                >
+                  {m.references_select_files()}
+                </Button>
+                <input
+                  ref={referenceInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? [])
+                    void onReferenceFiles(files)
+                    event.target.value = ''
+                  }}
+                />
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Input
+                  placeholder={m.references_youtube_placeholder()}
+                  value={youtubeUrl}
+                  onChange={(event) => setYoutubeUrl(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || !youtubeUrl.trim()) return
+                    event.preventDefault()
+                    void onImportYoutube()
+                  }}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void onImportYoutube()}
+                >
+                  {m.references_youtube_import()}
+                </Button>
+              </div>
+
+              {supportsReferences ? null : (
+                <p className="text-muted-foreground bg-muted/40 rounded-lg p-2 text-xs">
+                  {m.references_model_unsupported()}
+                </p>
+              )}
+
+              <div className="pretty-scroll max-h-56 min-w-0 space-y-1.5 overflow-auto pr-1">
+                {referenceAssets.length === 0 ? (
+                  <p className="text-muted-foreground border-border/50 rounded-xl border border-dashed p-3 text-center text-sm">
+                    {m.references_empty()}
+                  </p>
+                ) : null}
+
+                {referenceAssets.map((asset) => {
+                  const selected = selectedReferenceIds.includes(asset.id)
+                  return (
+                    <button
+                      key={asset.id}
+                      type="button"
+                      className={`grid w-full min-w-0 grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border p-1.5 text-left transition-all ${
+                        selected
+                          ? 'border-primary/60 bg-primary/5 ring-primary/20 ring-1'
+                          : 'border-border/50 bg-card hover:border-primary/30'
+                      }`}
+                      onClick={() => {
+                        setSelectedReferenceIds((current) =>
+                          current.includes(asset.id)
+                            ? current.filter((id) => id !== asset.id)
+                            : [...current, asset.id],
+                        )
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="h-14 w-[72px] overflow-hidden rounded-lg"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openLightbox({
+                            title: m.references_title(),
+                            initialAssetId: asset.id,
+                            items: referenceAssets.map((entry) => ({
+                              assetId: entry.id,
+                              label: m.references_title(),
+                            })),
+                          })
+                        }}
+                      >
+                        <AssetThumb asset={asset} alt={m.references_title()} />
+                      </button>
+                      <div className="min-w-0 text-xs">
+                        <p className="truncate font-medium">{asset.kind}</p>
+                        <p className="text-muted-foreground truncate">
+                          {asset.width}x{asset.height}
+                        </p>
+                      </div>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelectedReferenceIds((current) =>
+                            current.filter((id) => id !== asset.id),
+                          )
+                          void removeReferenceImage(asset.id)
+                        }}
+                      >
+                        {m.references_delete()}
+                      </Button>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <Separator />
+
+              {/* Personas section */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium">{m.personas_title()}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {m.personas_selected({
+                      count: String(selectedPersonaIds.length),
+                    })}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {selectedPersonaNames.length === 0 ? (
+                      <Badge variant="outline">{m.common_none()}</Badge>
+                    ) : (
+                      <>
+                        {displayedPersonaNames.map((name) => (
+                          <Badge key={name} variant="outline">
+                            {name}
+                          </Badge>
+                        ))}
+                        {personaOverflowCount > 0 ? (
+                          <Badge variant="outline">
+                            +{personaOverflowCount}
+                          </Badge>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsPersonaModalOpen(true)}
+                >
+                  {m.personas_open_manager()}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Exports card */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{m.exports_title()}</CardTitle>
+              <CardDescription className="text-xs">
+                {m.exports_description()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => void exportProjectBatch()}
+              >
+                {m.exports_batch({ count: String(outputAssets.length) })}
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Quota warning */}
+          {quotaState ? (
+            <Card className="border-destructive/40">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-destructive text-base">
+                  {m.quota_title()}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {quotaState.reason}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="grid gap-2 pt-0">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCleanupStateVisible((current) => !current)
+                    void onLoadCleanup()
+                  }}
+                >
+                  {cleanupStateVisible ? m.quota_close() : m.quota_open()}
+                </Button>
+
+                {cleanupStateVisible ? (
+                  <div className="pretty-scroll max-h-44 space-y-1.5 overflow-auto pr-1">
+                    {cleanupRows.map((row) => (
+                      <div
+                        key={row.project.id}
+                        className="bg-muted/30 flex items-center justify-between rounded-lg px-3 py-2"
+                      >
+                        <div>
+                          <p className="text-sm font-medium">
+                            {row.project.name}
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            {m.quota_estimated_size({
+                              size: bytesToSize(row.bytes),
+                            })}
                           </p>
                         </div>
                         <Button
                           size="xs"
-                          variant="ghost"
-                          className="text-muted-foreground hover:text-destructive"
-                          onClick={(event) => {
-                            event.stopPropagation()
-                            setSelectedReferenceIds((current) =>
-                              current.filter((id) => id !== asset.id),
-                            )
-                            void removeReferenceImage(asset.id)
-                          }}
+                          variant="destructive"
+                          onClick={() =>
+                            setProjectIdPendingDelete(row.project.id)
+                          }
                         >
-                          {m.references_delete()}
+                          {m.projects_delete()}
                         </Button>
-                      </button>
-                    )
-                  })}
-                </div>
-
-                <Separator />
-
-                {/* Personas section */}
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-medium">{m.personas_title()}</p>
-                    <p className="text-muted-foreground text-xs">
-                      {m.personas_selected({
-                        count: String(selectedPersonaIds.length),
-                      })}
-                    </p>
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {selectedPersonaNames.length === 0 ? (
-                        <Badge variant="outline">{m.common_none()}</Badge>
-                      ) : (
-                        <>
-                          {displayedPersonaNames.map((name) => (
-                            <Badge key={name} variant="outline">
-                              {name}
-                            </Badge>
-                          ))}
-                          {personaOverflowCount > 0 ? (
-                            <Badge variant="outline">
-                              +{personaOverflowCount}
-                            </Badge>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setIsPersonaModalOpen(true)}
-                  >
-                    {m.personas_open_manager()}
-                  </Button>
-                </div>
+                ) : null}
               </CardContent>
             </Card>
+          ) : null}
 
-            {/* Exports card */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">{m.exports_title()}</CardTitle>
-                <CardDescription className="text-xs">
-                  {m.exports_description()}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => void exportProjectBatch()}
-                >
-                  {m.exports_batch({ count: String(outputAssets.length) })}
-                </Button>
+          {/* Error card */}
+          {error ? (
+            <Card className="border-destructive/30">
+              <CardContent className="text-destructive pt-5 text-sm">
+                {error}
               </CardContent>
             </Card>
+          ) : null}
+        </aside>
 
-            {/* Quota warning */}
-            {quotaState ? (
-              <Card className="border-destructive/40">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-destructive text-base">
-                    {m.quota_title()}
-                  </CardTitle>
-                  <CardDescription className="text-xs">
-                    {quotaState.reason}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="grid gap-2 pt-0">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setCleanupStateVisible((current) => !current)
-                      void onLoadCleanup()
-                    }}
-                  >
-                    {cleanupStateVisible ? m.quota_close() : m.quota_open()}
-                  </Button>
-
-                  {cleanupStateVisible ? (
-                    <div className="pretty-scroll max-h-44 space-y-1.5 overflow-auto pr-1">
-                      {cleanupRows.map((row) => (
-                        <div
-                          key={row.project.id}
-                          className="bg-muted/30 flex items-center justify-between rounded-lg px-3 py-2"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">
-                              {row.project.name}
-                            </p>
-                            <p className="text-muted-foreground text-xs">
-                              {m.quota_estimated_size({
-                                size: bytesToSize(row.bytes),
-                              })}
-                            </p>
-                          </div>
-                          <Button
-                            size="xs"
-                            variant="destructive"
-                            onClick={() =>
-                              setProjectIdPendingDelete(row.project.id)
-                            }
-                          >
-                            {m.projects_delete()}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </CardContent>
-              </Card>
-            ) : null}
-
-            {/* Error card */}
-            {error ? (
-              <Card className="border-destructive/30">
-                <CardContent className="text-destructive pt-5 text-sm">
-                  {error}
-                </CardContent>
-              </Card>
-            ) : null}
-          </aside>
-
-          {/* ── Right main area ────────────────────────────────────── */}
-          <section className="min-w-0 space-y-4">
-            {/* Prompt area */}
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">
-                  {m.generation_prompt_label()}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-3 pt-0">
+        {/* ── Right main area: prompt pinned + timeline scrolls ──── */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {/* Prompt area ─ ALWAYS visible, never scrolls away */}
+          <div className="flex-none border-b p-4">
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex-1">
                 <Textarea
                   id="prompt"
                   value={prompt}
                   placeholder={m.generation_prompt_placeholder()}
-                  className="min-h-[100px] resize-y"
+                  className="min-h-[80px] resize-none"
                   onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.metaKey || event.ctrlKey) &&
+                      event.key === 'Enter'
+                    ) {
+                      event.preventDefault()
+                      if (!busy && modelId && prompt.trim()) void onGenerate()
+                    }
+                  }}
                 />
                 {supportsNegativePrompt ? (
-                  <>
-                    <Label htmlFor="negative-prompt" className="text-xs">
-                      {m.generation_negative_label()}
-                    </Label>
-                    <Textarea
-                      id="negative-prompt"
-                      value={negativePrompt}
-                      placeholder={m.generation_negative_placeholder()}
-                      className="min-h-[60px] resize-y"
-                      onChange={(event) =>
-                        setNegativePrompt(event.target.value)
-                      }
-                    />
-                  </>
+                  <Textarea
+                    id="negative-prompt"
+                    value={negativePrompt}
+                    placeholder={m.generation_negative_placeholder()}
+                    className="mt-2 min-h-[48px] resize-none text-sm"
+                    onChange={(event) => setNegativePrompt(event.target.value)}
+                  />
                 ) : null}
-              </CardContent>
-            </Card>
-
-            {/* Timeline */}
-            <Card className="min-h-[60vh]">
-              <CardHeader>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <CardTitle>{m.timeline_title()}</CardTitle>
-                    <CardDescription className="text-xs">
-                      {m.timeline_description()}
-                    </CardDescription>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={historyBusy || undoStack.length === 0}
-                      onClick={() => void onUndo()}
-                    >
-                      {m.timeline_action_undo()}
-                    </Button>
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      disabled={historyBusy || redoStack.length === 0}
-                      onClick={() => void onRedo()}
-                    >
-                      {m.timeline_action_redo()}
-                    </Button>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {timelineItems.length === 0 ? (
-                  <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-16 text-sm">
-                    <svg
-                      viewBox="0 0 24 24"
-                      className="h-8 w-8 opacity-30"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth={1.5}
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-                      />
-                    </svg>
-                    <p>{m.timeline_empty()}</p>
-                  </div>
-                ) : (
-                  <ol className="border-primary/20 relative space-y-3 border-l-2 pl-5">
-                    {timelineItems.map((item) => {
-                      const collapsed = collapsedStepIds.includes(item.id)
-
-                      return (
-                        <li key={item.id} className="relative">
-                          <span className="bg-primary ring-background absolute top-3.5 -left-[1.82rem] h-3 w-3 rounded-full ring-2" />
-
-                          {item.type === 'prompt' ? (
-                            <PromptTimelineCard
-                              item={item}
-                              collapsed={collapsed}
-                              assetsMap={assetsMap}
-                              missingReferenceIdsByStep={
-                                missingReferenceIdsByStep
-                              }
-                              onToggleCollapsed={() =>
-                                toggleStepCollapsed(item.id)
-                              }
-                              onDelete={() =>
-                                onRequestDeleteTimelineStep(
-                                  item.sourceStepId,
-                                  m.timeline_prompt(),
-                                )
-                              }
-                              onReusePrompt={() => onReusePrompt(item.input)}
-                              onCopyText={onCopyText}
-                            />
-                          ) : item.type === 'generation' ? (
-                            <GenerationTimelineCard
-                              item={item}
-                              collapsed={collapsed}
-                              assetsMap={assetsMap}
-                              settings={settings}
-                              onToggleCollapsed={() =>
-                                toggleStepCollapsed(item.id)
-                              }
-                              onDelete={() =>
-                                onRequestDeleteTimelineStep(
-                                  item.sourceStepId,
-                                  m.timeline_generation_step(),
-                                )
-                              }
-                              onRemixFrom={(assetId) =>
-                                onRemixFrom(item, assetId)
-                              }
-                              onEditAsset={openEditorForAsset}
-                              onExportAsset={(assetId) =>
-                                void exportSingleAsset(assetId)
-                              }
-                              openLightbox={openLightbox}
-                            />
-                          ) : (
-                            <EditTimelineCard
-                              item={item}
-                              collapsed={collapsed}
-                              assetsMap={assetsMap}
-                              settings={settings}
-                              onToggleCollapsed={() =>
-                                toggleStepCollapsed(item.id)
-                              }
-                              onDelete={() =>
-                                onRequestDeleteTimelineStep(
-                                  item.step.id,
-                                  m.timeline_edit_step(),
-                                )
-                              }
-                              onRemixFromAsset={onRemixFromAsset}
-                              onEditAsset={openEditorForAsset}
-                              onExportAsset={(assetId) =>
-                                void exportSingleAsset(assetId)
-                              }
-                              openLightbox={openLightbox}
-                            />
-                          )}
-                        </li>
+              </div>
+              <Button
+                className="h-[80px] px-6"
+                disabled={
+                  busy || !modelId || unavailableModelSelected || !prompt.trim()
+                }
+                onClick={() => void onGenerate()}
+              >
+                {busy
+                  ? m.generation_button_busy()
+                  : remixOfStepId
+                    ? m.generation_button_remix()
+                    : m.generation_button()}
+              </Button>
+            </div>
+            {remixOfStepId ? (
+              <div className="bg-primary/5 border-primary/20 mt-2 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs">
+                {remixPreviewAsset ? (
+                  <button
+                    type="button"
+                    className="border-border/70 h-8 w-12 shrink-0 overflow-hidden rounded border"
+                    onClick={() => {
+                      if (!remixOfAssetId) return
+                      openLightbox({
+                        title: m.generation_title(),
+                        initialAssetId: remixOfAssetId,
+                        items: [
+                          {
+                            assetId: remixOfAssetId,
+                            label: m.timeline_output(),
+                          },
+                        ],
+                      })
+                    }}
+                  >
+                    <AssetThumb
+                      asset={remixPreviewAsset}
+                      alt={m.timeline_output()}
+                    />
+                  </button>
+                ) : null}
+                <span className="text-foreground font-medium">
+                  {m.generation_remix_active({
+                    stepId: remixOfStepId,
+                  })}
+                </span>
+                <button
+                  type="button"
+                  className="text-primary ml-auto text-xs underline"
+                  onClick={() => {
+                    setRemixOfStepId(undefined)
+                    setRemixOfAssetId(undefined)
+                    if (remixSnapshot) {
+                      setModelId(remixSnapshot.modelId)
+                      setPrompt(remixSnapshot.prompt)
+                      setNegativePrompt(remixSnapshot.negativePrompt)
+                      setAspectRatio(remixSnapshot.aspectRatio)
+                      setResolutionPreset(remixSnapshot.resolutionPreset)
+                      setOutputCount(remixSnapshot.outputCount)
+                      setSelectedReferenceIds(
+                        remixSnapshot.selectedReferenceIds,
                       )
-                    })}
-                  </ol>
-                )}
-              </CardContent>
-            </Card>
-          </section>
-        </div>
+                      setSelectedPersonaIds(remixSnapshot.selectedPersonaIds)
+                      setRemixSnapshot(null)
+                    }
+                  }}
+                >
+                  {m.generation_remix_clear()}
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Timeline ─ scrolls independently */}
+          <div className="pretty-scroll min-h-0 flex-1 overflow-y-auto">
+            <div className="bg-background/95 sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3 backdrop-blur-sm">
+              <div>
+                <h3 className="text-sm font-semibold">{m.timeline_title()}</h3>
+                <p className="text-muted-foreground text-xs">
+                  {m.timeline_description()}
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={historyBusy || undoStack.length === 0}
+                  onClick={() => void onUndo()}
+                >
+                  {m.timeline_action_undo()}
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={historyBusy || redoStack.length === 0}
+                  onClick={() => void onRedo()}
+                >
+                  {m.timeline_action_redo()}
+                </Button>
+              </div>
+            </div>
+            <div className="p-4">
+              {timelineItems.length === 0 ? (
+                <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-16 text-sm">
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-8 w-8 opacity-30"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                    />
+                  </svg>
+                  <p>{m.timeline_empty()}</p>
+                </div>
+              ) : (
+                <ol className="border-primary/20 relative space-y-3 border-l-2 pl-5">
+                  {timelineItems.map((item) => {
+                    const collapsed = collapsedStepIds.includes(item.id)
+
+                    return (
+                      <li key={item.id} className="relative">
+                        <span className="bg-primary ring-background absolute top-3.5 -left-[1.82rem] h-3 w-3 rounded-full ring-2" />
+
+                        {item.type === 'prompt' ? (
+                          <PromptTimelineCard
+                            item={item}
+                            collapsed={collapsed}
+                            assetsMap={assetsMap}
+                            missingReferenceIdsByStep={
+                              missingReferenceIdsByStep
+                            }
+                            onToggleCollapsed={() =>
+                              toggleStepCollapsed(item.id)
+                            }
+                            onDelete={() =>
+                              onRequestDeleteTimelineStep(
+                                item.sourceStepId,
+                                m.timeline_prompt(),
+                              )
+                            }
+                            onReusePrompt={() => onReusePrompt(item.input)}
+                            onCopyText={onCopyText}
+                          />
+                        ) : item.type === 'generation' ? (
+                          <GenerationTimelineCard
+                            item={item}
+                            collapsed={collapsed}
+                            assetsMap={assetsMap}
+                            settings={settings}
+                            onToggleCollapsed={() =>
+                              toggleStepCollapsed(item.id)
+                            }
+                            onDelete={() =>
+                              onRequestDeleteTimelineStep(
+                                item.sourceStepId,
+                                m.timeline_generation_step(),
+                              )
+                            }
+                            onRemixFrom={(assetId) =>
+                              onRemixFrom(item, assetId)
+                            }
+                            onEditAsset={openEditorForAsset}
+                            onExportAsset={(assetId) =>
+                              void exportSingleAsset(assetId)
+                            }
+                            openLightbox={openLightbox}
+                          />
+                        ) : (
+                          <EditTimelineCard
+                            item={item}
+                            collapsed={collapsed}
+                            assetsMap={assetsMap}
+                            settings={settings}
+                            onToggleCollapsed={() =>
+                              toggleStepCollapsed(item.id)
+                            }
+                            onDelete={() =>
+                              onRequestDeleteTimelineStep(
+                                item.step.id,
+                                m.timeline_edit_step(),
+                              )
+                            }
+                            onRemixFromAsset={onRemixFromAsset}
+                            onEditAsset={openEditorForAsset}
+                            onExportAsset={(assetId) =>
+                              void exportSingleAsset(assetId)
+                            }
+                            openLightbox={openLightbox}
+                          />
+                        )}
+                      </li>
+                    )
+                  })}
+                </ol>
+              )}
+            </div>
+          </div>
+        </section>
       </div>
 
       {/* ─── Dialogs ─────────────────────────────────────────────── */}
