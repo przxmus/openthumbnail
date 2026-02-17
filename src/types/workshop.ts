@@ -107,6 +107,7 @@ export interface GenerationResultStep {
   type: 'generation-result'
   createdAt: number
   promptStepId: string
+  inputSnapshot?: GenerationInput
   status: 'pending' | 'completed' | 'failed'
   outputs: Array<GenerationOutput>
   error?: string

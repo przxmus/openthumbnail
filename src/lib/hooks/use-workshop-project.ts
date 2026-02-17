@@ -524,6 +524,7 @@ export function useWorkshopProject(projectId: string) {
         type: 'generation-result',
         createdAt: Date.now(),
         promptStepId: promptStep.id,
+        inputSnapshot: promptStep.input,
         status: 'pending',
         outputs: [],
         remixOfStepId: params.remixOfStepId,
@@ -757,6 +758,18 @@ export function useWorkshopProject(projectId: string) {
     [reload],
   )
 
+  const restoreTimelineStep = useCallback(
+    async (snapshot: { step: TimelineStep; assets: Array<OutputAsset> }) => {
+      for (const asset of snapshot.assets) {
+        await upsertAsset(asset)
+      }
+
+      await upsertStep(snapshot.step)
+      await reload({ preserveScroll: true })
+    },
+    [reload],
+  )
+
   const personaUsage = useCallback(async (persona: Persona) => {
     return collectUsageForPersona(persona)
   }, [])
@@ -822,6 +835,7 @@ export function useWorkshopProject(projectId: string) {
     cleanupCandidates,
     removeProjectAndRefresh,
     removeTimelineStep,
+    restoreTimelineStep,
     personaUsage,
     missingReferenceIdsByStep,
   }

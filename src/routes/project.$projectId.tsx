@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
 import type {
   EditOperations,
@@ -134,6 +134,11 @@ interface EditTimelineItem {
 
 type TimelineItem = PromptTimelineItem | GenerationTimelineItem | EditTimelineItem
 
+interface StepUndoEntry {
+  step: TimelineStep
+  assets: Array<OutputAsset>
+}
+
 function ProjectWorkshopPage() {
   const navigate = useNavigate()
   const params = Route.useParams()
@@ -173,6 +178,7 @@ function ProjectWorkshopPage() {
     cleanupCandidates,
     removeProjectAndRefresh,
     removeTimelineStep,
+    restoreTimelineStep,
     missingReferenceIdsByStep,
   } = useWorkshopProject(params.projectId)
 
@@ -198,6 +204,13 @@ function ProjectWorkshopPage() {
     Array<{ project: { id: string; name: string }; bytes: number }>
   >([])
   const [projectIdPendingDelete, setProjectIdPendingDelete] = useState<string | null>(null)
+  const [timelineStepPendingDelete, setTimelineStepPendingDelete] = useState<{
+    id: string
+    label: string
+  } | null>(null)
+  const [undoStack, setUndoStack] = useState<Array<StepUndoEntry>>([])
+  const [redoStack, setRedoStack] = useState<Array<StepUndoEntry>>([])
+  const [historyBusy, setHistoryBusy] = useState(false)
   const [remixSnapshot, setRemixSnapshot] = useState<{
     modelId: string
     prompt: string
@@ -213,6 +226,7 @@ function ProjectWorkshopPage() {
     () => getModelCapability(models, modelId),
     [modelId, models],
   )
+  const stepById = useMemo(() => new Map(steps.map((step) => [step.id, step])), [steps])
 
   const supportsNegativePrompt = modelCapability?.supportsNegativePrompt ?? false
   const supportsReferences = modelCapability?.supportsReferences ?? false
@@ -245,13 +259,14 @@ function ProjectWorkshopPage() {
 
       if (step.type === 'generation-result') {
         const promptStep = promptStepsById.get(step.promptStepId)
-        if (!promptStep) {
+        const resolvedInput = promptStep?.input ?? step.inputSnapshot
+        if (!resolvedInput) {
           continue
         }
 
         rows.push({
           sourceStepId: step.id,
-          input: promptStep.input,
+          input: resolvedInput,
           outputs: step.outputs,
           status: step.status,
           trace: step.trace,
@@ -305,7 +320,8 @@ function ProjectWorkshopPage() {
 
       if (step.type === 'generation-result') {
         const promptStep = promptStepsById.get(step.promptStepId)
-        if (!promptStep) {
+        const resolvedInput = promptStep?.input ?? step.inputSnapshot
+        if (!resolvedInput) {
           continue
         }
 
@@ -313,7 +329,7 @@ function ProjectWorkshopPage() {
           id: step.id,
           type: 'generation',
           createdAt: step.createdAt,
-          input: promptStep.input,
+          input: resolvedInput,
           status: step.status,
           trace: step.trace,
           outputs: step.outputs,
@@ -674,9 +690,155 @@ function ProjectWorkshopPage() {
     setIsEditorOpen(true)
   }
 
-  const onDeleteTimelineStep = async (sourceStepId: string) => {
-    await removeTimelineStep(sourceStepId)
+  const buildUndoEntry = useCallback(
+    (sourceStepId: string): StepUndoEntry | null => {
+      const step = stepById.get(sourceStepId)
+      if (!step) {
+        return null
+      }
+
+      const assets: Array<OutputAsset> = []
+      if (step.type === 'generation' || step.type === 'generation-result') {
+        for (const output of step.outputs) {
+          const asset = assetsMap.get(output.assetId)
+          if (asset?.scope === 'project') {
+            assets.push(asset)
+          }
+        }
+      } else if (step.type === 'edit') {
+        const asset = assetsMap.get(step.outputAssetId)
+        if (asset?.scope === 'project') {
+          assets.push(asset)
+        }
+      }
+
+      return { step, assets }
+    },
+    [assetsMap, stepById],
+  )
+
+  const onRequestDeleteTimelineStep = (sourceStepId: string, label: string) => {
+    setTimelineStepPendingDelete({
+      id: sourceStepId,
+      label,
+    })
   }
+
+  const onConfirmDeleteTimelineStep = async () => {
+    if (!timelineStepPendingDelete) {
+      return
+    }
+
+    const snapshot = buildUndoEntry(timelineStepPendingDelete.id)
+    if (!snapshot) {
+      setTimelineStepPendingDelete(null)
+      return
+    }
+
+    setHistoryBusy(true)
+    try {
+      await removeTimelineStep(timelineStepPendingDelete.id)
+      setUndoStack((current) => [...current, snapshot])
+      setRedoStack([])
+    } finally {
+      setTimelineStepPendingDelete(null)
+      setHistoryBusy(false)
+    }
+  }
+
+  const onUndo = useCallback(async () => {
+    if (historyBusy) {
+      return
+    }
+
+    let entry: StepUndoEntry | null = null
+    setUndoStack((current) => {
+      if (!current.length) {
+        return current
+      }
+
+      entry = current[current.length - 1]
+      return current.slice(0, -1)
+    })
+
+    if (!entry) {
+      return
+    }
+
+    setHistoryBusy(true)
+    try {
+      await restoreTimelineStep(entry)
+      setRedoStack((current) => [...current, entry as StepUndoEntry])
+    } finally {
+      setHistoryBusy(false)
+    }
+  }, [historyBusy, restoreTimelineStep])
+
+  const onRedo = useCallback(async () => {
+    if (historyBusy) {
+      return
+    }
+
+    let entry: StepUndoEntry | null = null
+    setRedoStack((current) => {
+      if (!current.length) {
+        return current
+      }
+
+      entry = current[current.length - 1]
+      return current.slice(0, -1)
+    })
+
+    if (!entry) {
+      return
+    }
+
+    setHistoryBusy(true)
+    try {
+      await removeTimelineStep(entry.step.id)
+      setUndoStack((current) => [...current, entry as StepUndoEntry])
+    } finally {
+      setHistoryBusy(false)
+    }
+  }, [historyBusy, removeTimelineStep])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+
+      const isMetaOrCtrl = event.metaKey || event.ctrlKey
+      if (!isMetaOrCtrl) {
+        return
+      }
+
+      const key = event.key.toLowerCase()
+      if (key === 'z') {
+        event.preventDefault()
+        if (event.shiftKey) {
+          void onRedo()
+        } else {
+          void onUndo()
+        }
+        return
+      }
+
+      if (key === 'y') {
+        event.preventDefault()
+        void onRedo()
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onRedo, onUndo])
 
   if (loading) {
     return (
@@ -1188,8 +1350,34 @@ function ProjectWorkshopPage() {
         <section className="min-w-0">
           <Card className="min-h-[80vh]">
             <CardHeader>
-              <CardTitle>{m.timeline_title()}</CardTitle>
-              <CardDescription>{m.timeline_description()}</CardDescription>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <CardTitle>{m.timeline_title()}</CardTitle>
+                  <CardDescription>{m.timeline_description()}</CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={historyBusy || undoStack.length === 0}
+                    onClick={() => {
+                      void onUndo()
+                    }}
+                  >
+                    {m.timeline_action_undo()}
+                  </Button>
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={historyBusy || redoStack.length === 0}
+                    onClick={() => {
+                      void onRedo()
+                    }}
+                  >
+                    {m.timeline_action_redo()}
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               {timelineItems.length === 0 ? (
@@ -1214,9 +1402,9 @@ function ProjectWorkshopPage() {
                                   <Badge>{formatDate(item.createdAt)}</Badge>
                                   <Button
                                     size="xs"
-                                    variant="outline"
+                                    variant="destructive"
                                     onClick={() => {
-                                      void onDeleteTimelineStep(item.sourceStepId)
+                                      onRequestDeleteTimelineStep(item.sourceStepId, m.timeline_prompt())
                                     }}
                                   >
                                     {m.timeline_action_delete()}
@@ -1236,9 +1424,9 @@ function ProjectWorkshopPage() {
                                 </Button>
                                 <Button
                                   size="xs"
-                                  variant="outline"
+                                  variant="destructive"
                                   onClick={() => {
-                                    void onDeleteTimelineStep(item.sourceStepId)
+                                    onRequestDeleteTimelineStep(item.sourceStepId, m.timeline_prompt())
                                   }}
                                 >
                                   {m.timeline_action_delete()}
@@ -1336,6 +1524,15 @@ function ProjectWorkshopPage() {
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <Badge>{formatDate(item.createdAt)}</Badge>
+                                  <Button
+                                    size="xs"
+                                    variant="destructive"
+                                    onClick={() => {
+                                      onRequestDeleteTimelineStep(item.sourceStepId, m.timeline_generation_step())
+                                    }}
+                                  >
+                                    {m.timeline_action_delete()}
+                                  </Button>
                                   <Button
                                     size="xs"
                                     variant="outline"
@@ -1519,9 +1716,9 @@ function ProjectWorkshopPage() {
                                   <Badge>{formatDate(item.step.createdAt)}</Badge>
                                   <Button
                                     size="xs"
-                                    variant="outline"
+                                    variant="destructive"
                                     onClick={() => {
-                                      void onDeleteTimelineStep(item.step.id)
+                                      onRequestDeleteTimelineStep(item.step.id, m.timeline_edit_step())
                                     }}
                                   >
                                     {m.timeline_action_delete()}
@@ -1668,6 +1865,32 @@ function ProjectWorkshopPage() {
           </Card>
         </section>
       </div>
+
+      <AlertDialog
+        open={timelineStepPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTimelineStepPendingDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{m.timeline_delete_confirm_title()}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {m.timeline_delete_confirm_description({
+                step: timelineStepPendingDelete?.label ?? m.common_unknown(),
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{m.common_close()}</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" onClick={() => void onConfirmDeleteTimelineStep()}>
+              {m.timeline_action_delete()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={projectIdPendingDelete !== null}

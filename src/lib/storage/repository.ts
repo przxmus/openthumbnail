@@ -398,15 +398,6 @@ export async function deleteStepWithAssets(stepId: string) {
     }
   } else if (step.type === 'prompt') {
     await stepsStore.delete(step.id)
-    const linkedStep = step.linkedResultStepId
-      ? await stepsStore.get(step.linkedResultStepId)
-      : null
-    if (linkedStep?.type === 'generation-result') {
-      await stepsStore.delete(linkedStep.id)
-      for (const output of linkedStep.outputs) {
-        await deleteAssetIfProjectOwned(output.assetId)
-      }
-    }
   } else if (step.type === 'edit') {
     await stepsStore.delete(step.id)
     await deleteAssetIfProjectOwned(step.outputAssetId)
@@ -526,7 +517,12 @@ export async function collectUsageForPersona(persona: Persona) {
     }
 
     if (step.type === 'generation-result') {
-      return promptStepIdsWithPersona.has(step.promptStepId)
+      if (promptStepIdsWithPersona.has(step.promptStepId)) {
+        return true
+      }
+
+      const snapshot = step.inputSnapshot
+      return Boolean(snapshot?.personaIds.includes(persona.id))
     }
 
     return false
