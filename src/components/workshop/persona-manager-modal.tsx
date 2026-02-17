@@ -86,13 +86,35 @@ export function PersonaManagerModal({
       closeLabel={m.common_close()}
       size="xl"
     >
-      <div className="grid gap-6 xl:grid-cols-[320px_1fr]">
-        <section className="bg-muted/20 grid gap-3 rounded-2xl p-4">
-          <div className="grid gap-2">
+      <div className="grid min-h-[70vh] gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
+        <section className="bg-muted/20 ring-border/60 flex min-h-0 flex-col gap-3 rounded-3xl p-4 ring-1">
+          <div>
+            <p className="text-muted-foreground text-xs uppercase tracking-[0.22em]">
+              {m.personas_title()}
+            </p>
+          </div>
+
+          <div className="grid gap-2 rounded-2xl bg-card p-3 ring-1 ring-border/60">
             <Input
               placeholder={m.persona_create_label()}
               value={newPersonaName}
               onChange={(event) => setNewPersonaName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || busy || !newPersonaName.trim()) {
+                  return
+                }
+
+                event.preventDefault()
+                void (async () => {
+                  setBusy(true)
+                  try {
+                    await onCreatePersona(newPersonaName)
+                    setNewPersonaName('')
+                  } finally {
+                    setBusy(false)
+                  }
+                })()
+              }}
             />
             <Button
               disabled={busy || !newPersonaName.trim()}
@@ -110,9 +132,11 @@ export function PersonaManagerModal({
             </Button>
           </div>
 
-          <div className="min-h-0 max-h-[60vh] space-y-2 overflow-auto pr-1">
+          <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
             {personas.length === 0 ? (
-              <p className="text-muted-foreground text-sm">{m.persona_no_items()}</p>
+              <p className="text-muted-foreground rounded-xl border border-dashed border-border/70 p-3 text-sm">
+                {m.persona_no_items()}
+              </p>
             ) : null}
 
             {personas.map((persona) => {
@@ -123,9 +147,9 @@ export function PersonaManagerModal({
                 <button
                   key={persona.id}
                   type="button"
-                  className={`w-full rounded-xl border px-3 py-2 text-left ${
+                  className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
                     isActive
-                      ? 'border-primary bg-primary/10'
+                      ? 'border-primary bg-primary/10 shadow-sm'
                       : 'border-border/70 bg-card hover:border-primary/50'
                   }`}
                   onClick={() => {
@@ -134,8 +158,8 @@ export function PersonaManagerModal({
                   }}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{persona.name}</p>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold">{persona.name}</p>
                       <p className="text-muted-foreground text-xs">
                         {persona.referenceAssetIds.length} {m.persona_images()}
                       </p>
@@ -143,7 +167,7 @@ export function PersonaManagerModal({
                     <input
                       type="checkbox"
                       checked={selected}
-                      className="accent-primary h-4 w-4"
+                      className="accent-primary h-4 w-4 shrink-0"
                       onChange={() => {
                         onToggleSelectedPersona(persona.id)
                       }}
@@ -156,13 +180,28 @@ export function PersonaManagerModal({
           </div>
         </section>
 
-        <section className="grid min-h-0 gap-4">
+        <section className="bg-card ring-border/70 flex min-h-0 flex-col gap-4 rounded-3xl p-4 ring-1">
           {activePersona ? (
             <>
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
                 <Input
                   value={renameValue}
                   onChange={(event) => setRenameValue(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || busy || !renameValue.trim()) {
+                      return
+                    }
+
+                    event.preventDefault()
+                    void (async () => {
+                      setBusy(true)
+                      try {
+                        await onRenamePersona(activePersona.id, renameValue)
+                      } finally {
+                        setBusy(false)
+                      }
+                    })()
+                  }}
                 />
                 <Button
                   variant="outline"
@@ -194,10 +233,8 @@ export function PersonaManagerModal({
                 </Button>
               </div>
 
-              <div className="text-muted-foreground text-xs">{m.persona_limit_hint()}</div>
-
-              <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                <div className="text-muted-foreground text-sm">{m.persona_add_images()}</div>
+              <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span>{m.persona_limit_hint()}</span>
                 <label className="inline-flex">
                   <input
                     type="file"
@@ -210,43 +247,51 @@ export function PersonaManagerModal({
                       event.target.value = ''
                     }}
                   />
-                  <span className="bg-secondary text-secondary-foreground hover:bg-secondary/75 inline-flex h-9 items-center rounded-4xl px-3 text-sm font-medium">
+                  <span className="bg-secondary text-secondary-foreground hover:bg-secondary/75 inline-flex h-9 items-center rounded-4xl px-4 text-sm font-medium">
                     {m.persona_add_images()}
                   </span>
                 </label>
               </div>
 
-              <div className="grid min-h-0 grid-cols-2 gap-3 overflow-auto pr-1 md:grid-cols-3">
-                {activeAssets.map((asset) => (
-                  <div key={asset.id} className="rounded-xl border border-border/70 p-2">
-                    <button
-                      type="button"
-                      className="aspect-square w-full overflow-hidden rounded-lg"
-                      onClick={() => {
-                        onOpenLightbox({
-                          title: activePersona.name,
-                          initialAssetId: asset.id,
-                          items: activeAssets.map((entry) => ({
-                            assetId: entry.id,
-                            label: activePersona.name,
-                          })),
-                        })
-                      }}
-                    >
-                      <AssetThumb asset={asset} alt={activePersona.name} />
-                    </button>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      className="mt-2 w-full"
-                      onClick={() => {
-                        void onRemovePersonaImage(asset.id)
-                      }}
-                    >
-                      {m.persona_remove_image()}
-                    </Button>
+              <div className="min-h-0 flex-1 overflow-auto pr-1">
+                {activeAssets.length === 0 ? (
+                  <p className="text-muted-foreground rounded-2xl border border-dashed border-border/70 p-4 text-sm">
+                    {m.persona_no_items()}
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {activeAssets.map((asset) => (
+                      <div key={asset.id} className="group rounded-2xl border border-border/70 p-2">
+                        <button
+                          type="button"
+                          className="aspect-square w-full overflow-hidden rounded-xl"
+                          onClick={() => {
+                            onOpenLightbox({
+                              title: activePersona.name,
+                              initialAssetId: asset.id,
+                              items: activeAssets.map((entry) => ({
+                                assetId: entry.id,
+                                label: activePersona.name,
+                              })),
+                            })
+                          }}
+                        >
+                          <AssetThumb asset={asset} alt={activePersona.name} />
+                        </button>
+                        <Button
+                          size="xs"
+                          variant="ghost"
+                          className="mt-2 w-full opacity-80 group-hover:opacity-100"
+                          onClick={() => {
+                            void onRemovePersonaImage(asset.id)
+                          }}
+                        >
+                          {m.persona_remove_image()}
+                        </Button>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             </>
           ) : (
