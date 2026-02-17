@@ -105,6 +105,8 @@ interface PromptTimelineItem {
   type: 'prompt'
   createdAt: number
   input: GenerationInput
+  sortGroupId: string
+  sortOrder: number
 }
 
 interface GenerationTimelineItem {
@@ -116,6 +118,8 @@ interface GenerationTimelineItem {
   trace?: GenerationResultStep['trace']
   outputs: LegacyGenerationStep['outputs']
   sourceStepId: string
+  sortGroupId: string
+  sortOrder: number
 }
 
 interface EditTimelineItem {
@@ -123,6 +127,8 @@ interface EditTimelineItem {
   type: 'edit'
   createdAt: number
   step: Extract<TimelineStep, { type: 'edit' }>
+  sortGroupId: string
+  sortOrder: number
 }
 
 type TimelineItem = PromptTimelineItem | GenerationTimelineItem | EditTimelineItem
@@ -208,9 +214,7 @@ function ProjectWorkshopPage() {
 
   const supportsNegativePrompt = modelCapability?.supportsNegativePrompt ?? false
   const supportsReferences = modelCapability?.supportsReferences ?? false
-  const supportsMultiOutput = modelCapability?.supportsMultiOutput ?? false
-  const rawMaxOutputs = modelCapability?.maxOutputs ?? (supportsMultiOutput ? 3 : 1)
-  const maxOutputs = Math.max(1, Math.min(MAX_OUTPUTS_UI, rawMaxOutputs))
+  const maxOutputs = MAX_OUTPUTS_UI
 
   const promptStepsById = useMemo(
     () =>
@@ -278,6 +282,8 @@ function ProjectWorkshopPage() {
           type: 'edit',
           createdAt: step.createdAt,
           step,
+          sortGroupId: step.id,
+          sortOrder: 2,
         })
         continue
       }
@@ -288,6 +294,8 @@ function ProjectWorkshopPage() {
           type: 'prompt',
           createdAt: step.createdAt,
           input: step.input,
+          sortGroupId: step.id,
+          sortOrder: 0,
         })
         continue
       }
@@ -307,6 +315,8 @@ function ProjectWorkshopPage() {
           trace: step.trace,
           outputs: step.outputs,
           sourceStepId: step.id,
+          sortGroupId: step.promptStepId,
+          sortOrder: 1,
         })
         continue
       }
@@ -317,6 +327,8 @@ function ProjectWorkshopPage() {
           type: 'prompt',
           createdAt: step.createdAt,
           input: step.input,
+          sortGroupId: step.id,
+          sortOrder: 0,
         })
         items.push({
           id: `${step.id}:generation`,
@@ -327,11 +339,24 @@ function ProjectWorkshopPage() {
           trace: step.trace,
           outputs: step.outputs,
           sourceStepId: step.id,
+          sortGroupId: step.id,
+          sortOrder: 1,
         })
       }
     }
 
-    return items.sort((a, b) => a.createdAt - b.createdAt)
+    return items.sort((a, b) => {
+      const createdAtDiff = a.createdAt - b.createdAt
+      if (createdAtDiff !== 0) {
+        return createdAtDiff
+      }
+
+      if (a.sortGroupId === b.sortGroupId) {
+        return a.sortOrder - b.sortOrder
+      }
+
+      return a.sortGroupId.localeCompare(b.sortGroupId)
+    })
   }, [promptStepsById, steps])
 
   const selectedEditorAsset = editorSourceAssetId
@@ -450,14 +475,8 @@ function ProjectWorkshopPage() {
   }, [collapsedStepIds, project])
 
   useEffect(() => {
-    setOutputCount((current) => {
-      if (!supportsMultiOutput) {
-        return 1
-      }
-
-      return Math.max(1, Math.min(current, maxOutputs))
-    })
-  }, [maxOutputs, supportsMultiOutput])
+    setOutputCount((current) => Math.max(1, Math.min(current, maxOutputs)))
+  }, [maxOutputs])
 
   useEffect(() => {
     const allowed = new Set(referenceAssets.map((asset) => asset.id))
@@ -846,24 +865,21 @@ function ProjectWorkshopPage() {
                 </div>
               </div>
 
-              {supportsMultiOutput && maxOutputs > 1 ? (
-                <div className="grid min-w-0 gap-1">
-                  <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
-                  <input
-                    id="count"
-                    type="range"
-                    min={1}
-                    max={maxOutputs}
-                    value={outputCount}
-                    className={sliderClassName()}
-                    onChange={(event) => {
-                      setOutputCount(Number(event.target.value))
-                    }}
-                  />
-                </div>
-              ) : (
-                <p className="text-muted-foreground text-xs">{m.generation_outputs_single()}</p>
-              )}
+              <div className="grid min-w-0 gap-1">
+                <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
+                <input
+                  id="count"
+                  type="range"
+                  min={1}
+                  max={maxOutputs}
+                  value={outputCount}
+                  className={sliderClassName()}
+                  onChange={(event) => {
+                    setOutputCount(Number(event.target.value))
+                  }}
+                />
+                <p className="text-muted-foreground text-xs">{m.generation_outputs_experimental()}</p>
+              </div>
 
               <Button
                 disabled={busy || !modelId || unavailableModelSelected || !prompt.trim()}
@@ -1355,45 +1371,65 @@ function ProjectWorkshopPage() {
                                         className="group border-border/60 overflow-hidden rounded-2xl border"
                                       >
                                         <div
-                                          className="relative w-full overflow-hidden bg-muted/20"
+                                          role="button"
+                                          tabIndex={0}
+                                          className="relative w-full cursor-zoom-in overflow-hidden bg-muted/20"
                                           style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+                                          onClick={() => {
+                                            openLightbox({
+                                              title: m.timeline_generation_step(),
+                                              initialAssetId: output.assetId,
+                                              items: item.outputs.map((entry, index) => ({
+                                                assetId: entry.assetId,
+                                                label: `${m.timeline_output()} ${index + 1}`,
+                                              })),
+                                            })
+                                          }}
+                                          onKeyDown={(event) => {
+                                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                              return
+                                            }
+
+                                            event.preventDefault()
+                                            openLightbox({
+                                              title: m.timeline_generation_step(),
+                                              initialAssetId: output.assetId,
+                                              items: item.outputs.map((entry, index) => ({
+                                                assetId: entry.assetId,
+                                                label: `${m.timeline_output()} ${index + 1}`,
+                                              })),
+                                            })
+                                          }}
                                         >
                                           <AssetThumb asset={asset} alt={m.timeline_output()} />
                                           <div className="absolute inset-2 flex items-start justify-end gap-2 opacity-0 transition group-hover:opacity-100">
                                             <Button
                                               size="xs"
                                               variant="secondary"
-                                              onClick={() => {
-                                                openLightbox({
-                                                  title: m.timeline_generation_step(),
-                                                  initialAssetId: output.assetId,
-                                                  items: item.outputs.map((entry, index) => ({
-                                                    assetId: entry.assetId,
-                                                    label: `${m.timeline_output()} ${index + 1}`,
-                                                  })),
-                                                })
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                onRemixFrom(item, output.assetId)
                                               }}
-                                            >
-                                              {m.lightbox_zoom_in()}
-                                            </Button>
-                                            <Button
-                                              size="xs"
-                                              variant="secondary"
-                                              onClick={() => onRemixFrom(item, output.assetId)}
                                             >
                                               {m.timeline_action_remix()}
                                             </Button>
                                             <Button
                                               size="xs"
                                               variant="secondary"
-                                              onClick={() => openEditorForAsset(output.assetId)}
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                openEditorForAsset(output.assetId)
+                                              }}
                                             >
                                               {m.timeline_action_edit()}
                                             </Button>
                                             <Button
                                               size="xs"
                                               variant="secondary"
-                                              onClick={() => void exportSingleAsset(output.assetId)}
+                                              onClick={(event) => {
+                                                event.stopPropagation()
+                                                void exportSingleAsset(output.assetId)
+                                              }}
                                             >
                                               {m.timeline_action_jpg()}
                                             </Button>

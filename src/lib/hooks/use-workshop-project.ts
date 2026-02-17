@@ -14,6 +14,7 @@ import type {
 } from '@/types/workshop'
 import {
   DEFAULT_OUTPUT_COUNT,
+  MAX_OUTPUTS_UI,
   MAX_PERSONA_REFERENCES,
   getResolutionPresetConfig,
 } from '@/lib/constants/workshop'
@@ -466,7 +467,7 @@ export function useWorkshopProject(projectId: string) {
       const model = params.modelCapability
       const supportsReferences = model?.supportsReferences ?? false
       const supportsNegativePrompt = model?.supportsNegativePrompt ?? false
-      const maxOutputs = model?.maxOutputs ?? (model?.supportsMultiOutput ? 3 : 1)
+      const maxOutputs = MAX_OUTPUTS_UI
 
       const outputCount = Math.max(
         1,
