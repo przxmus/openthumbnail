@@ -2,6 +2,8 @@
 
 OpenThumbnail is a local-first thumbnail workshop for generating, remixing, and exporting YouTube-style thumbnails with OpenRouter image models.
 
+Live app: [openthumbnail.przxmus.dev](https://openthumbnail.przxmus.dev)
+
 ## What you can do
 
 - Create multiple projects and keep each project's timeline/history.
