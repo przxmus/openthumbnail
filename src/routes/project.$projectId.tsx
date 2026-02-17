@@ -898,7 +898,7 @@ function ProjectWorkshopPage() {
       {/* ─── Content: fixed viewport, two independent scroll regions ─ */}
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* ── Left sidebar ─ independently scrollable ────────────── */}
-        <aside className="pretty-scroll hidden w-[340px] flex-none space-y-3 overflow-y-auto border-r p-4 xl:block">
+        <aside className="pretty-scroll hidden w-[400px] flex-none space-y-3 overflow-y-auto border-r p-4 xl:block">
           {/* Generation card */}
           <Card>
             <CardHeader className="pb-2">
@@ -1010,6 +1010,44 @@ function ProjectWorkshopPage() {
                   {m.generation_outputs_experimental()}
                 </p>
               </div>
+
+              {/* ── Prompt ───────────────────────── */}
+              <div className="grid gap-1.5">
+                <Label htmlFor="prompt" className="text-xs">
+                  {m.generation_prompt_label?.() ?? 'Prompt'}
+                </Label>
+                <Textarea
+                  id="prompt"
+                  value={prompt}
+                  placeholder={m.generation_prompt_placeholder()}
+                  className="min-h-[100px] resize-y"
+                  onChange={(event) => setPrompt(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (
+                      (event.metaKey || event.ctrlKey) &&
+                      event.key === 'Enter'
+                    ) {
+                      event.preventDefault()
+                      if (!busy && modelId && prompt.trim()) void onGenerate()
+                    }
+                  }}
+                />
+              </div>
+
+              {supportsNegativePrompt ? (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="negative-prompt" className="text-xs">
+                    {m.generation_negative_label?.() ?? 'Negative prompt'}
+                  </Label>
+                  <Textarea
+                    id="negative-prompt"
+                    value={negativePrompt}
+                    placeholder={m.generation_negative_placeholder()}
+                    className="min-h-[48px] resize-y text-sm"
+                    onChange={(event) => setNegativePrompt(event.target.value)}
+                  />
+                </div>
+              ) : null}
 
               <Button
                 className="w-full"
@@ -1358,111 +1396,9 @@ function ProjectWorkshopPage() {
           ) : null}
         </aside>
 
-        {/* ── Right main area: prompt pinned + timeline scrolls ──── */}
+        {/* ── Right main area: full-height timeline ──── */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          {/* Prompt area ─ ALWAYS visible, never scrolls away */}
-          <div className="flex-none border-b p-4">
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex-1">
-                <Textarea
-                  id="prompt"
-                  value={prompt}
-                  placeholder={m.generation_prompt_placeholder()}
-                  className="min-h-[80px] resize-none"
-                  onChange={(event) => setPrompt(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (
-                      (event.metaKey || event.ctrlKey) &&
-                      event.key === 'Enter'
-                    ) {
-                      event.preventDefault()
-                      if (!busy && modelId && prompt.trim()) void onGenerate()
-                    }
-                  }}
-                />
-                {supportsNegativePrompt ? (
-                  <Textarea
-                    id="negative-prompt"
-                    value={negativePrompt}
-                    placeholder={m.generation_negative_placeholder()}
-                    className="mt-2 min-h-[48px] resize-none text-sm"
-                    onChange={(event) => setNegativePrompt(event.target.value)}
-                  />
-                ) : null}
-              </div>
-              <Button
-                className="h-[80px] px-6"
-                disabled={
-                  busy || !modelId || unavailableModelSelected || !prompt.trim()
-                }
-                onClick={() => void onGenerate()}
-              >
-                {busy
-                  ? m.generation_button_busy()
-                  : remixOfStepId
-                    ? m.generation_button_remix()
-                    : m.generation_button()}
-              </Button>
-            </div>
-            {remixOfStepId ? (
-              <div className="bg-primary/5 border-primary/20 mt-2 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs">
-                {remixPreviewAsset ? (
-                  <button
-                    type="button"
-                    className="border-border/70 h-8 w-12 shrink-0 overflow-hidden rounded border"
-                    onClick={() => {
-                      if (!remixOfAssetId) return
-                      openLightbox({
-                        title: m.generation_title(),
-                        initialAssetId: remixOfAssetId,
-                        items: [
-                          {
-                            assetId: remixOfAssetId,
-                            label: m.timeline_output(),
-                          },
-                        ],
-                      })
-                    }}
-                  >
-                    <AssetThumb
-                      asset={remixPreviewAsset}
-                      alt={m.timeline_output()}
-                    />
-                  </button>
-                ) : null}
-                <span className="text-foreground font-medium">
-                  {m.generation_remix_active({
-                    stepId: remixOfStepId,
-                  })}
-                </span>
-                <button
-                  type="button"
-                  className="text-primary ml-auto text-xs underline"
-                  onClick={() => {
-                    setRemixOfStepId(undefined)
-                    setRemixOfAssetId(undefined)
-                    if (remixSnapshot) {
-                      setModelId(remixSnapshot.modelId)
-                      setPrompt(remixSnapshot.prompt)
-                      setNegativePrompt(remixSnapshot.negativePrompt)
-                      setAspectRatio(remixSnapshot.aspectRatio)
-                      setResolutionPreset(remixSnapshot.resolutionPreset)
-                      setOutputCount(remixSnapshot.outputCount)
-                      setSelectedReferenceIds(
-                        remixSnapshot.selectedReferenceIds,
-                      )
-                      setSelectedPersonaIds(remixSnapshot.selectedPersonaIds)
-                      setRemixSnapshot(null)
-                    }
-                  }}
-                >
-                  {m.generation_remix_clear()}
-                </button>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Timeline ─ scrolls independently */}
+          {/* Timeline ─ scrolls independently, full height */}
           <div className="pretty-scroll min-h-0 flex-1 overflow-y-auto">
             <div className="bg-background/95 sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b px-6 py-3 backdrop-blur-sm">
               <div>
