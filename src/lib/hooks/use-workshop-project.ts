@@ -530,9 +530,12 @@ export function useWorkshopProject(projectId: string) {
 
       promptStep.linkedResultStepId = pendingStep.id
 
+      let pendingStepCreated = false
+
       try {
         await appendStep(promptStep)
         await appendStep(pendingStep)
+        pendingStepCreated = true
         setSteps((current) => [...current, promptStep, pendingStep].sort(byStepOrder))
 
         const generation = await runGeneration({
@@ -610,17 +613,19 @@ export function useWorkshopProject(projectId: string) {
 
         await reload({ preserveScroll: true })
       } catch (reason) {
-        const failedStep: GenerationResultStep = {
-          ...pendingStep,
-          status: 'failed',
-          outputs: [],
-          error: reason instanceof Error ? reason.message : 'Generation failed',
-        }
+        if (pendingStepCreated) {
+          const failedStep: GenerationResultStep = {
+            ...pendingStep,
+            status: 'failed',
+            outputs: [],
+            error: reason instanceof Error ? reason.message : 'Generation failed',
+          }
 
-        await upsertStep(failedStep)
-        setSteps((current) =>
-          current.map((step) => (step.id === pendingStep.id ? failedStep : step)),
-        )
+          await upsertStep(failedStep)
+          setSteps((current) =>
+            current.map((step) => (step.id === pendingStep.id ? failedStep : step)),
+          )
+        }
 
         if (isQuotaCleanupState(reason)) {
           setQuotaState(reason)
