@@ -3,10 +3,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent, DragEvent } from 'react'
 import type {
   EditOperations,
-  GenerationStep,
+  GenerationInput,
+  GenerationResultStep,
+  LegacyGenerationStep,
   LightboxContext,
   ModelCapability,
   OutputAsset,
+  PromptStep,
   TimelineStep,
 } from '@/types/workshop'
 
@@ -17,6 +20,16 @@ import { ImageLightboxModal } from '@/components/workshop/image-lightbox-modal'
 import { PersonaManagerModal } from '@/components/workshop/persona-manager-modal'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import {
   Card,
   CardContent,
@@ -78,45 +91,41 @@ function sliderClassName() {
   return 'range-input h-2.5 w-full min-w-0'
 }
 
-function findSourceGenerationStep(
-  stepsById: Map<string, TimelineStep>,
-  stepsInOrder: Array<TimelineStep>,
-  sourceAssetId: string,
-): GenerationStep | null {
-  const MAX_DEPTH = 30
-  let currentAssetId: string | null = sourceAssetId
-  let depth = 0
-
-  while (currentAssetId && depth < MAX_DEPTH) {
-    const generation = stepsInOrder.find(
-      (step): step is GenerationStep =>
-        step.type === 'generation' &&
-        step.outputs.some((output) => output.assetId === currentAssetId),
-    )
-
-    if (generation) {
-      return generation
-    }
-
-    const editSource = stepsInOrder.find(
-      (step) => step.type === 'edit' && step.outputAssetId === currentAssetId,
-    )
-
-    if (!editSource) {
-      break
-    }
-
-    const direct = stepsById.get(editSource.id)
-    if (!direct || direct.type !== 'edit') {
-      break
-    }
-
-    currentAssetId = direct.sourceAssetId
-    depth += 1
-  }
-
-  return null
+interface GenerationSource {
+  sourceStepId: string
+  input: GenerationInput
+  outputs: LegacyGenerationStep['outputs']
+  status: GenerationResultStep['status']
+  trace?: GenerationResultStep['trace']
+  createdAt: number
 }
+
+interface PromptTimelineItem {
+  id: string
+  type: 'prompt'
+  createdAt: number
+  input: GenerationInput
+}
+
+interface GenerationTimelineItem {
+  id: string
+  type: 'generation'
+  createdAt: number
+  input: GenerationInput
+  status: GenerationResultStep['status']
+  trace?: GenerationResultStep['trace']
+  outputs: LegacyGenerationStep['outputs']
+  sourceStepId: string
+}
+
+interface EditTimelineItem {
+  id: string
+  type: 'edit'
+  createdAt: number
+  step: Extract<TimelineStep, { type: 'edit' }>
+}
+
+type TimelineItem = PromptTimelineItem | GenerationTimelineItem | EditTimelineItem
 
 function ProjectWorkshopPage() {
   const navigate = useNavigate()
@@ -180,11 +189,17 @@ function ProjectWorkshopPage() {
   const [cleanupRows, setCleanupRows] = useState<
     Array<{ project: { id: string; name: string }; bytes: number }>
   >([])
-
-  const stepsById = useMemo(
-    () => new Map(steps.map((step) => [step.id, step])),
-    [steps],
-  )
+  const [projectIdPendingDelete, setProjectIdPendingDelete] = useState<string | null>(null)
+  const [remixSnapshot, setRemixSnapshot] = useState<{
+    modelId: string
+    prompt: string
+    negativePrompt: string
+    aspectRatio: '1:1' | '4:3' | '16:9' | '9:16'
+    resolutionPreset: '720p' | '1080p'
+    outputCount: number
+    selectedReferenceIds: Array<string>
+    selectedPersonaIds: Array<string>
+  } | null>(null)
 
   const modelCapability = useMemo(
     () => getModelCapability(models, modelId),
@@ -193,7 +208,131 @@ function ProjectWorkshopPage() {
 
   const supportsNegativePrompt = modelCapability?.supportsNegativePrompt ?? false
   const supportsReferences = modelCapability?.supportsReferences ?? false
-  const maxOutputs = Math.max(1, Math.min(MAX_OUTPUTS_UI, modelCapability?.maxOutputs ?? 1))
+  const supportsMultiOutput = modelCapability?.supportsMultiOutput ?? false
+  const rawMaxOutputs = modelCapability?.maxOutputs ?? (supportsMultiOutput ? 3 : 1)
+  const maxOutputs = Math.max(1, Math.min(MAX_OUTPUTS_UI, rawMaxOutputs))
+
+  const promptStepsById = useMemo(
+    () =>
+      new Map(
+        steps
+          .filter((step): step is PromptStep => step.type === 'prompt')
+          .map((step) => [step.id, step]),
+      ),
+    [steps],
+  )
+
+  const generationSources = useMemo(() => {
+    const rows: Array<GenerationSource> = []
+    for (const step of steps) {
+      if (step.type === 'generation') {
+        rows.push({
+          sourceStepId: step.id,
+          input: step.input,
+          outputs: step.outputs,
+          status: step.status,
+          trace: step.trace,
+          createdAt: step.createdAt,
+        })
+        continue
+      }
+
+      if (step.type === 'generation-result') {
+        const promptStep = promptStepsById.get(step.promptStepId)
+        if (!promptStep) {
+          continue
+        }
+
+        rows.push({
+          sourceStepId: step.id,
+          input: promptStep.input,
+          outputs: step.outputs,
+          status: step.status,
+          trace: step.trace,
+          createdAt: step.createdAt,
+        })
+      }
+    }
+
+    return rows
+  }, [promptStepsById, steps])
+
+  const generationSourceByAssetId = useMemo(() => {
+    const map = new Map<string, GenerationSource>()
+    for (const generation of generationSources) {
+      for (const output of generation.outputs) {
+        map.set(output.assetId, generation)
+      }
+    }
+
+    return map
+  }, [generationSources])
+
+  const timelineItems = useMemo(() => {
+    const items: Array<TimelineItem> = []
+
+    for (const step of steps) {
+      if (step.type === 'edit') {
+        items.push({
+          id: step.id,
+          type: 'edit',
+          createdAt: step.createdAt,
+          step,
+        })
+        continue
+      }
+
+      if (step.type === 'prompt') {
+        items.push({
+          id: step.id,
+          type: 'prompt',
+          createdAt: step.createdAt,
+          input: step.input,
+        })
+        continue
+      }
+
+      if (step.type === 'generation-result') {
+        const promptStep = promptStepsById.get(step.promptStepId)
+        if (!promptStep) {
+          continue
+        }
+
+        items.push({
+          id: step.id,
+          type: 'generation',
+          createdAt: step.createdAt,
+          input: promptStep.input,
+          status: step.status,
+          trace: step.trace,
+          outputs: step.outputs,
+          sourceStepId: step.id,
+        })
+        continue
+      }
+
+      if (step.type === 'generation') {
+        items.push({
+          id: `${step.id}:prompt`,
+          type: 'prompt',
+          createdAt: step.createdAt,
+          input: step.input,
+        })
+        items.push({
+          id: `${step.id}:generation`,
+          type: 'generation',
+          createdAt: step.createdAt + 1,
+          input: step.input,
+          status: step.status,
+          trace: step.trace,
+          outputs: step.outputs,
+          sourceStepId: step.id,
+        })
+      }
+    }
+
+    return items.sort((a, b) => a.createdAt - b.createdAt)
+  }, [promptStepsById, steps])
 
   const selectedEditorAsset = editorSourceAssetId
     ? assetsMap.get(editorSourceAssetId) ?? null
@@ -282,11 +421,11 @@ function ProjectWorkshopPage() {
     }
 
     setCollapsedStepIds((current) => {
-      const stepIds = new Set(steps.map((step) => step.id))
+      const stepIds = new Set(timelineItems.map((step) => step.id))
       const next = current.filter((id) => stepIds.has(id))
       const existing = new Set(next)
 
-      for (const step of steps) {
+      for (const step of timelineItems) {
         if (!existing.has(step.id)) {
           next.push(step.id)
         }
@@ -298,7 +437,7 @@ function ProjectWorkshopPage() {
 
       return next
     })
-  }, [project, steps])
+  }, [project, timelineItems])
 
   useEffect(() => {
     if (!project) {
@@ -311,8 +450,14 @@ function ProjectWorkshopPage() {
   }, [collapsedStepIds, project])
 
   useEffect(() => {
-    setOutputCount((current) => Math.max(1, Math.min(current, maxOutputs)))
-  }, [maxOutputs])
+    setOutputCount((current) => {
+      if (!supportsMultiOutput) {
+        return 1
+      }
+
+      return Math.max(1, Math.min(current, maxOutputs))
+    })
+  }, [maxOutputs, supportsMultiOutput])
 
   useEffect(() => {
     const allowed = new Set(referenceAssets.map((asset) => asset.id))
@@ -383,6 +528,7 @@ function ProjectWorkshopPage() {
 
     setRemixOfStepId(undefined)
     setRemixOfAssetId(undefined)
+    setRemixSnapshot(null)
   }
 
   const onImportYoutube = async () => {
@@ -419,93 +565,83 @@ function ProjectWorkshopPage() {
     }
   }
 
-  const onReusePrompt = (step: GenerationStep) => {
-    setModelId(step.input.modelId)
-    setPrompt(step.input.prompt)
-    setNegativePrompt(step.input.negativePrompt ?? '')
-    setAspectRatio(step.input.aspectRatio)
-    setResolutionPreset(step.input.resolutionPreset)
-    setOutputCount(step.input.outputCount)
-    setSelectedReferenceIds(step.input.referenceAssetIds)
-    setSelectedPersonaIds(step.input.personaIds)
+  const onReusePrompt = (input: GenerationInput) => {
+    setModelId(input.modelId)
+    setPrompt(input.prompt)
+    setNegativePrompt(input.negativePrompt ?? '')
+    setAspectRatio(input.aspectRatio)
+    setResolutionPreset(input.resolutionPreset)
+    setOutputCount(input.outputCount)
+    setSelectedReferenceIds(input.referenceAssetIds)
+    setSelectedPersonaIds(input.personaIds)
     setRemixOfStepId(undefined)
     setRemixOfAssetId(undefined)
+    setRemixSnapshot(null)
   }
 
-  const onRemixFrom = (step: TimelineStep, outputAssetId: string) => {
-    if (step.type !== 'generation') {
-      return
-    }
-
-    setModelId(step.input.modelId)
-    setAspectRatio(step.input.aspectRatio)
-    setResolutionPreset(step.input.resolutionPreset)
-    setOutputCount(step.input.outputCount)
-    setSelectedPersonaIds(step.input.personaIds)
-
-    if (prompt === step.input.prompt) {
-      setPrompt('')
-    }
-
-    if (negativePrompt === (step.input.negativePrompt ?? '')) {
-      setNegativePrompt('')
-    }
-
-    setSelectedReferenceIds(
-      Array.from(new Set([outputAssetId, ...step.input.referenceAssetIds])),
+  const onRemixFrom = (generation: GenerationSource, outputAssetId: string) => {
+    setRemixSnapshot((current) =>
+      current ?? {
+        modelId,
+        prompt,
+        negativePrompt,
+        aspectRatio,
+        resolutionPreset,
+        outputCount,
+        selectedReferenceIds,
+        selectedPersonaIds,
+      },
     )
-    setRemixOfStepId(step.id)
+
+    setModelId(generation.input.modelId)
+    setPrompt('')
+    setNegativePrompt('')
+    setAspectRatio(generation.input.aspectRatio)
+    setResolutionPreset(generation.input.resolutionPreset)
+    setOutputCount(generation.input.outputCount)
+    setSelectedPersonaIds(generation.input.personaIds)
+    setSelectedReferenceIds(
+      Array.from(new Set([outputAssetId, ...generation.input.referenceAssetIds])),
+    )
+    setRemixOfStepId(generation.sourceStepId)
     setRemixOfAssetId(outputAssetId)
   }
 
-  const onRemixFromAsset = (outputAssetId: string, stepId?: string) => {
-    let resolvedStepId = stepId
+  const onRemixFromAsset = (outputAssetId: string) => {
+    setRemixSnapshot((current) =>
+      current ?? {
+        modelId,
+        prompt,
+        negativePrompt,
+        aspectRatio,
+        resolutionPreset,
+        outputCount,
+        selectedReferenceIds,
+        selectedPersonaIds,
+      },
+    )
 
-    if (stepId) {
-      const sourceStep = stepsById.get(stepId)
-      if (sourceStep?.type === 'edit') {
-        const sourceGeneration = findSourceGenerationStep(
-          stepsById,
-          steps,
-          sourceStep.sourceAssetId,
-        )
-
-        if (sourceGeneration) {
-          resolvedStepId = sourceGeneration.id
-          setModelId(sourceGeneration.input.modelId)
-          setAspectRatio(sourceGeneration.input.aspectRatio)
-          setResolutionPreset(sourceGeneration.input.resolutionPreset)
-          setOutputCount(sourceGeneration.input.outputCount)
-          setSelectedPersonaIds(sourceGeneration.input.personaIds)
-
-          if (prompt === sourceGeneration.input.prompt) {
-            setPrompt('')
-          }
-
-          if (negativePrompt === (sourceGeneration.input.negativePrompt ?? '')) {
-            setNegativePrompt('')
-          }
-        }
-      }
-    }
-
-    if (resolvedStepId) {
-      const resolved = stepsById.get(resolvedStepId)
-      if (resolved?.type === 'generation') {
-        setSelectedReferenceIds(
-          Array.from(new Set([outputAssetId, ...resolved.input.referenceAssetIds])),
-        )
-      } else {
-        setSelectedReferenceIds((current) =>
-          current.includes(outputAssetId) ? current : [outputAssetId, ...current],
-        )
-      }
-    } else {
-      setSelectedReferenceIds((current) =>
-        current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+    const generation = generationSourceByAssetId.get(outputAssetId)
+    if (generation) {
+      setModelId(generation.input.modelId)
+      setPrompt('')
+      setNegativePrompt('')
+      setAspectRatio(generation.input.aspectRatio)
+      setResolutionPreset(generation.input.resolutionPreset)
+      setOutputCount(generation.input.outputCount)
+      setSelectedPersonaIds(generation.input.personaIds)
+      setSelectedReferenceIds(
+        Array.from(new Set([outputAssetId, ...generation.input.referenceAssetIds])),
       )
+      setRemixOfStepId(generation.sourceStepId)
+      setRemixOfAssetId(outputAssetId)
+      return
     }
-    setRemixOfStepId(resolvedStepId)
+
+    setSelectedReferenceIds((current) =>
+      current.includes(outputAssetId) ? current : [outputAssetId, ...current],
+    )
+    setRemixOfStepId(undefined)
     setRemixOfAssetId(outputAssetId)
   }
 
@@ -598,9 +734,8 @@ function ProjectWorkshopPage() {
               <Button
                 size="sm"
                 variant="destructive"
-                onClick={async () => {
-                  await removeProjectAndRefresh(project.id)
-                  await navigate({ to: '/' })
+                onClick={() => {
+                  setProjectIdPendingDelete(project.id)
                 }}
               >
                 {m.project_delete()}
@@ -711,7 +846,7 @@ function ProjectWorkshopPage() {
                 </div>
               </div>
 
-              {maxOutputs > 1 ? (
+              {supportsMultiOutput && maxOutputs > 1 ? (
                 <div className="grid min-w-0 gap-1">
                   <Label htmlFor="count">{m.generation_outputs_label({ count: String(outputCount) })}</Label>
                   <input
@@ -783,6 +918,17 @@ function ProjectWorkshopPage() {
                     onClick={() => {
                       setRemixOfStepId(undefined)
                       setRemixOfAssetId(undefined)
+                      if (remixSnapshot) {
+                        setModelId(remixSnapshot.modelId)
+                        setPrompt(remixSnapshot.prompt)
+                        setNegativePrompt(remixSnapshot.negativePrompt)
+                        setAspectRatio(remixSnapshot.aspectRatio)
+                        setResolutionPreset(remixSnapshot.resolutionPreset)
+                        setOutputCount(remixSnapshot.outputCount)
+                        setSelectedReferenceIds(remixSnapshot.selectedReferenceIds)
+                        setSelectedPersonaIds(remixSnapshot.selectedPersonaIds)
+                        setRemixSnapshot(null)
+                      }
                     }}
                   >
                     {m.generation_remix_clear()}
@@ -832,6 +978,14 @@ function ProjectWorkshopPage() {
                   placeholder={m.references_youtube_placeholder()}
                   value={youtubeUrl}
                   onChange={(event) => setYoutubeUrl(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter' || !youtubeUrl.trim()) {
+                      return
+                    }
+
+                    event.preventDefault()
+                    void onImportYoutube()
+                  }}
                 />
                 <Button size="sm" variant="outline" onClick={() => void onImportYoutube()}>
                   {m.references_youtube_import()}
@@ -986,9 +1140,8 @@ function ProjectWorkshopPage() {
                         <Button
                           size="xs"
                           variant="destructive"
-                          onClick={async () => {
-                            await removeProjectAndRefresh(row.project.id)
-                            await onLoadCleanup()
+                          onClick={() => {
+                            setProjectIdPendingDelete(row.project.id)
                           }}
                         >
                           {m.projects_delete()}
@@ -1015,55 +1168,40 @@ function ProjectWorkshopPage() {
               <CardDescription>{m.timeline_description()}</CardDescription>
             </CardHeader>
             <CardContent>
-              {steps.length === 0 ? (
+              {timelineItems.length === 0 ? (
                 <div className="bg-muted/30 text-muted-foreground rounded-2xl p-6 text-sm">
                   {m.timeline_empty()}
                 </div>
               ) : (
                 <ol className="relative space-y-4 border-l border-dashed pl-5">
-                  {steps.map((step) => {
-                    const collapsed = collapsedStepIds.includes(step.id)
+                  {timelineItems.map((item) => {
+                    const collapsed = collapsedStepIds.includes(item.id)
 
                     return (
-                      <li key={step.id} className="relative">
+                      <li key={item.id} className="relative">
                         <span className="bg-primary absolute -left-[1.72rem] top-3 h-3 w-3 rounded-full" />
 
-                        {step.type === 'generation' ? (
+                        {item.type === 'prompt' ? (
                           <Card size="sm" className="gap-4">
                             <CardHeader>
                               <div className="flex items-center justify-between gap-2">
+                                <CardTitle className="text-base">{m.timeline_prompt()}</CardTitle>
                                 <div className="flex items-center gap-2">
-                                  <CardTitle className="text-base">{m.timeline_generation_step()}</CardTitle>
-                                  {step.trace?.fallbackUsed ? (
-                                    <Badge variant="outline">{m.timeline_fallback_badge()}</Badge>
-                                  ) : null}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Badge>{formatDate(step.createdAt)}</Badge>
+                                  <Badge>{formatDate(item.createdAt)}</Badge>
                                   <Button
                                     size="xs"
                                     variant="outline"
-                                    onClick={() => toggleStepCollapsed(step.id)}
+                                    onClick={() => toggleStepCollapsed(item.id)}
                                   >
                                     {collapsed ? m.timeline_expand() : m.timeline_collapse()}
                                   </Button>
                                 </div>
                               </div>
-                              <CardDescription>
-                                {m.timeline_model_line({
-                                  model: step.input.modelId,
-                                  resolution: step.input.resolutionPreset,
-                                  ratio: step.input.aspectRatio,
-                                })}
-                              </CardDescription>
-                              <div className="flex flex-wrap gap-2">
-                                <Button size="xs" variant="outline" onClick={() => onReusePrompt(step)}>
-                                  {m.timeline_action_reuse_prompt()}
-                                </Button>
-                              </div>
                             </CardHeader>
                             <CardContent className="min-w-0 space-y-3 overflow-hidden">
-                              {collapsed ? null : (
+                              {collapsed ? (
+                                <p className="text-muted-foreground truncate text-sm">{item.input.prompt}</p>
+                              ) : (
                                 <>
                                   <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
                                     <div className="flex items-center justify-between gap-2">
@@ -1073,16 +1211,16 @@ function ProjectWorkshopPage() {
                                         variant="outline"
                                         className="border-zinc-500/60 bg-transparent text-zinc-100 hover:bg-zinc-700/70 hover:text-zinc-100"
                                         onClick={() => {
-                                          void onCopyText(step.input.prompt)
+                                          void onCopyText(item.input.prompt)
                                         }}
                                       >
                                         {m.timeline_action_copy_prompt()}
                                       </Button>
                                     </div>
-                                    <p className="mt-1 whitespace-pre-wrap">{step.input.prompt}</p>
+                                    <p className="mt-1 whitespace-pre-wrap">{item.input.prompt}</p>
                                   </div>
 
-                                  {step.input.negativePrompt ? (
+                                  {item.input.negativePrompt ? (
                                     <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
                                       <div className="flex items-center justify-between gap-2">
                                         <p className="text-zinc-500">{m.timeline_negative_prompt()}</p>
@@ -1091,25 +1229,33 @@ function ProjectWorkshopPage() {
                                           variant="outline"
                                           className="border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-200 dark:hover:text-zinc-900"
                                           onClick={() => {
-                                            void onCopyText(step.input.negativePrompt ?? '')
+                                            void onCopyText(item.input.negativePrompt ?? '')
                                           }}
                                         >
                                           {m.timeline_action_copy_negative_prompt()}
                                         </Button>
                                       </div>
-                                      <p className="mt-1 whitespace-pre-wrap">{step.input.negativePrompt}</p>
+                                      <p className="mt-1 whitespace-pre-wrap">{item.input.negativePrompt}</p>
                                     </div>
                                   ) : null}
+
+                                  <CardDescription>
+                                    {m.timeline_model_line({
+                                      model: item.input.modelId,
+                                      resolution: item.input.resolutionPreset,
+                                      ratio: item.input.aspectRatio,
+                                    })}
+                                  </CardDescription>
 
                                   <div className="flex min-w-0 flex-wrap gap-2">
                                     <span className="text-muted-foreground text-xs">
                                       {m.timeline_references_label()}:
                                     </span>
-                                    {step.input.referenceAssetIds.length === 0 ? (
+                                    {item.input.referenceAssetIds.length === 0 ? (
                                       <Badge variant="outline">{m.timeline_references_none()}</Badge>
                                     ) : (
-                                      step.input.referenceAssetIds.map((assetId) => {
-                                        const missingReferences = missingReferenceIdsByStep.get(step.id)
+                                      item.input.referenceAssetIds.map((assetId) => {
+                                        const missingReferences = missingReferenceIdsByStep.get(item.id)
                                         const isDeleted = missingReferences
                                           ? missingReferences.includes(assetId)
                                           : !assetsMap.has(assetId)
@@ -1123,95 +1269,178 @@ function ProjectWorkshopPage() {
                                       })
                                     )}
                                   </div>
+
+                                  <div className="flex flex-wrap gap-2">
+                                    <Button size="xs" variant="outline" onClick={() => onReusePrompt(item.input)}>
+                                      {m.timeline_action_reuse_prompt()}
+                                    </Button>
+                                  </div>
                                 </>
                               )}
-
-                              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                                {step.outputs.map((output, outputIndex) => {
-                                  const asset = assetsMap.get(output.assetId)
-                                  if (!asset) {
-                                    return null
-                                  }
-
-                                  return (
-                                    <div
-                                      key={output.assetId}
-                                      className="border-border/60 overflow-hidden rounded-2xl border"
-                                    >
-                                      <button
-                                        type="button"
-                                        className="w-full overflow-hidden bg-muted/20"
-                                        style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
-                                        onClick={() => {
-                                          openLightbox({
-                                            title: m.timeline_generation_step(),
-                                            initialAssetId: output.assetId,
-                                            items: step.outputs.map((entry, index) => ({
-                                              assetId: entry.assetId,
-                                              label: `${m.timeline_output()} ${index + 1}`,
-                                            })),
-                                          })
-                                        }}
-                                      >
-                                        <AssetThumb asset={asset} alt={m.timeline_output()} />
-                                      </button>
-                                      <div className="space-y-2 p-3">
-                                        <div className="flex flex-wrap gap-2">
-                                          <Button
-                                            size="xs"
-                                            variant="outline"
-                                            onClick={() => onRemixFrom(step, output.assetId)}
-                                          >
-                                            {m.timeline_action_remix()}
-                                          </Button>
-                                          <Button
-                                            size="xs"
-                                            variant="outline"
-                                            onClick={() => openEditorForAsset(output.assetId)}
-                                          >
-                                            {m.timeline_action_edit()}
-                                          </Button>
-                                          <Button
-                                            size="xs"
-                                            variant="outline"
-                                            onClick={() => void exportSingleAsset(output.assetId)}
-                                          >
-                                            {m.timeline_action_jpg()}
-                                          </Button>
-                                        </div>
-                                        <p className="text-muted-foreground text-xs">
-                                          {outputIndex + 1}. {asset.width}x{asset.height} · {asset.mimeType}
-                                        </p>
-                                      </div>
-                                    </div>
-                                  )
-                                })}
+                            </CardContent>
+                          </Card>
+                        ) : item.type === 'generation' ? (
+                          <Card size="sm" className="gap-4">
+                            <CardHeader>
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <CardTitle className="text-base">{m.timeline_generation_step()}</CardTitle>
+                                  {item.trace?.fallbackUsed ? (
+                                    <Badge variant="outline">{m.timeline_fallback_badge()}</Badge>
+                                  ) : null}
+                                  {item.status === 'pending' ? (
+                                    <Badge variant="outline">{m.generation_button_busy()}</Badge>
+                                  ) : null}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge>{formatDate(item.createdAt)}</Badge>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => toggleStepCollapsed(item.id)}
+                                  >
+                                    {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+                                  </Button>
+                                </div>
                               </div>
+                              {!collapsed ? (
+                                <CardDescription>
+                                  {m.timeline_model_line({
+                                    model: item.input.modelId,
+                                    resolution: item.input.resolutionPreset,
+                                    ratio: item.input.aspectRatio,
+                                  })}
+                                </CardDescription>
+                              ) : null}
+                            </CardHeader>
+                            <CardContent className="min-w-0 space-y-3 overflow-hidden">
+                              {item.status === 'pending' ? (
+                                <div
+                                  className={`grid gap-3 ${
+                                    item.input.outputCount <= 1
+                                      ? 'grid-cols-1'
+                                      : item.input.outputCount === 2
+                                        ? 'md:grid-cols-2'
+                                        : 'md:grid-cols-2 xl:grid-cols-3'
+                                  }`}
+                                >
+                                  {Array.from({ length: Math.max(1, item.input.outputCount) }).map((_, index) => (
+                                    <div
+                                      key={`${item.id}:skeleton:${index}`}
+                                      className="border-border/60 overflow-hidden rounded-2xl border p-2"
+                                    >
+                                      <div className="bg-muted h-44 animate-pulse rounded-xl" />
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div
+                                  className={`grid gap-3 ${
+                                    item.outputs.length <= 1
+                                      ? 'grid-cols-1'
+                                      : item.outputs.length === 2
+                                        ? 'md:grid-cols-2'
+                                        : 'md:grid-cols-2 xl:grid-cols-3'
+                                  }`}
+                                >
+                                  {item.outputs.map((output, outputIndex) => {
+                                    const asset = assetsMap.get(output.assetId)
+                                    if (!asset) {
+                                      return null
+                                    }
+
+                                    return (
+                                      <div
+                                        key={output.assetId}
+                                        className="group border-border/60 overflow-hidden rounded-2xl border"
+                                      >
+                                        <div
+                                          className="relative w-full overflow-hidden bg-muted/20"
+                                          style={{ aspectRatio: `${asset.width} / ${asset.height}` }}
+                                        >
+                                          <AssetThumb asset={asset} alt={m.timeline_output()} />
+                                          <div className="absolute inset-2 flex items-start justify-end gap-2 opacity-0 transition group-hover:opacity-100">
+                                            <Button
+                                              size="xs"
+                                              variant="secondary"
+                                              onClick={() => {
+                                                openLightbox({
+                                                  title: m.timeline_generation_step(),
+                                                  initialAssetId: output.assetId,
+                                                  items: item.outputs.map((entry, index) => ({
+                                                    assetId: entry.assetId,
+                                                    label: `${m.timeline_output()} ${index + 1}`,
+                                                  })),
+                                                })
+                                              }}
+                                            >
+                                              {m.lightbox_zoom_in()}
+                                            </Button>
+                                            <Button
+                                              size="xs"
+                                              variant="secondary"
+                                              onClick={() => onRemixFrom(item, output.assetId)}
+                                            >
+                                              {m.timeline_action_remix()}
+                                            </Button>
+                                            <Button
+                                              size="xs"
+                                              variant="secondary"
+                                              onClick={() => openEditorForAsset(output.assetId)}
+                                            >
+                                              {m.timeline_action_edit()}
+                                            </Button>
+                                            <Button
+                                              size="xs"
+                                              variant="secondary"
+                                              onClick={() => void exportSingleAsset(output.assetId)}
+                                            >
+                                              {m.timeline_action_jpg()}
+                                            </Button>
+                                          </div>
+                                        </div>
+
+                                        {!collapsed ? (
+                                          <div className="space-y-2 p-3">
+                                            <p className="text-muted-foreground text-xs">
+                                              {outputIndex + 1}. {asset.width}x{asset.height} · {asset.mimeType}
+                                            </p>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              )}
+
+                              {item.status === 'failed' ? (
+                                <p className="text-destructive text-xs">{m.generation_status_failed()}</p>
+                              ) : null}
 
                               {!collapsed && settings.nerdMode ? (
                                 <div className="bg-muted/30 rounded-xl p-3 text-xs">
-                                  <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
-                                  <p>{m.timeline_nerd_status({ status: step.status })}</p>
+                                  <p>{m.timeline_nerd_step_id({ id: item.sourceStepId })}</p>
+                                  <p>{m.timeline_nerd_status({ status: item.status })}</p>
                                   <p>
                                     {m.timeline_nerd_references({
-                                      count: String(step.input.referenceAssetIds.length),
+                                      count: String(item.input.referenceAssetIds.length),
                                     })}
                                   </p>
                                   <p>
                                     {m.timeline_nerd_personas({
-                                      count: String(step.input.personaIds.length),
+                                      count: String(item.input.personaIds.length),
                                     })}
                                   </p>
                                   <p>
                                     {m.timeline_nerd_requested_outputs({
-                                      count: String(step.input.outputCount),
+                                      count: String(item.input.outputCount),
                                     })}
                                   </p>
-                                  {step.trace?.fallbackUsed ? <p>{m.timeline_nerd_fallback_used()}</p> : null}
-                                  {step.trace?.requestAt ? (
+                                  {item.trace?.fallbackUsed ? <p>{m.timeline_nerd_fallback_used()}</p> : null}
+                                  {item.trace?.requestAt ? (
                                     <p>
                                       {m.timeline_nerd_request_started({
-                                        date: formatDate(step.trace.requestAt),
+                                        date: formatDate(item.trace.requestAt),
                                       })}
                                     </p>
                                   ) : null}
@@ -1225,11 +1454,11 @@ function ProjectWorkshopPage() {
                               <div className="flex items-center justify-between gap-2">
                                 <CardTitle className="text-base">{m.timeline_edit_step()}</CardTitle>
                                 <div className="flex items-center gap-2">
-                                  <Badge>{formatDate(step.createdAt)}</Badge>
+                                  <Badge>{formatDate(item.step.createdAt)}</Badge>
                                   <Button
                                     size="xs"
                                     variant="outline"
-                                    onClick={() => toggleStepCollapsed(step.id)}
+                                    onClick={() => toggleStepCollapsed(item.id)}
                                   >
                                     {collapsed ? m.timeline_expand() : m.timeline_collapse()}
                                   </Button>
@@ -1242,20 +1471,20 @@ function ProjectWorkshopPage() {
                             <CardContent className="grid gap-3 md:grid-cols-2">
                               <div className="space-y-2">
                                 <p className="text-xs font-medium">{m.timeline_source()}</p>
-                                {assetsMap.get(step.sourceAssetId) ? (
+                                {assetsMap.get(item.step.sourceAssetId) ? (
                                   <button
                                     type="button"
                                     className="w-full overflow-hidden rounded-xl bg-muted/20"
                                     style={{
-                                      aspectRatio: `${(assetsMap.get(step.sourceAssetId) as OutputAsset).width} / ${(assetsMap.get(step.sourceAssetId) as OutputAsset).height}`,
+                                      aspectRatio: `${(assetsMap.get(item.step.sourceAssetId) as OutputAsset).width} / ${(assetsMap.get(item.step.sourceAssetId) as OutputAsset).height}`,
                                     }}
                                     onClick={() => {
                                       openLightbox({
                                         title: m.timeline_edit_step(),
-                                        initialAssetId: step.sourceAssetId,
+                                        initialAssetId: item.step.sourceAssetId,
                                         items: [
                                           {
-                                            assetId: step.sourceAssetId,
+                                            assetId: item.step.sourceAssetId,
                                             label: m.timeline_source(),
                                           },
                                         ],
@@ -1263,7 +1492,7 @@ function ProjectWorkshopPage() {
                                     }}
                                   >
                                     <AssetThumb
-                                      asset={assetsMap.get(step.sourceAssetId) as OutputAsset}
+                                      asset={assetsMap.get(item.step.sourceAssetId) as OutputAsset}
                                       alt={m.timeline_source()}
                                     />
                                   </button>
@@ -1275,20 +1504,20 @@ function ProjectWorkshopPage() {
                               </div>
                               <div className="space-y-2">
                                 <p className="text-xs font-medium">{m.timeline_output()}</p>
-                                {assetsMap.get(step.outputAssetId) ? (
+                                {assetsMap.get(item.step.outputAssetId) ? (
                                   <button
                                     type="button"
                                     className="w-full overflow-hidden rounded-xl bg-muted/20"
                                     style={{
-                                      aspectRatio: `${(assetsMap.get(step.outputAssetId) as OutputAsset).width} / ${(assetsMap.get(step.outputAssetId) as OutputAsset).height}`,
+                                      aspectRatio: `${(assetsMap.get(item.step.outputAssetId) as OutputAsset).width} / ${(assetsMap.get(item.step.outputAssetId) as OutputAsset).height}`,
                                     }}
                                     onClick={() => {
                                       openLightbox({
                                         title: m.timeline_edit_step(),
-                                        initialAssetId: step.outputAssetId,
+                                        initialAssetId: item.step.outputAssetId,
                                         items: [
                                           {
-                                            assetId: step.outputAssetId,
+                                            assetId: item.step.outputAssetId,
                                             label: m.timeline_output(),
                                           },
                                         ],
@@ -1296,7 +1525,7 @@ function ProjectWorkshopPage() {
                                     }}
                                   >
                                     <AssetThumb
-                                      asset={assetsMap.get(step.outputAssetId) as OutputAsset}
+                                      asset={assetsMap.get(item.step.outputAssetId) as OutputAsset}
                                       alt={m.timeline_output()}
                                     />
                                   </button>
@@ -1309,21 +1538,21 @@ function ProjectWorkshopPage() {
                                   <Button
                                     size="xs"
                                     variant="outline"
-                                    onClick={() => onRemixFromAsset(step.outputAssetId, step.id)}
+                                    onClick={() => onRemixFromAsset(item.step.outputAssetId)}
                                   >
                                     {m.timeline_action_remix()}
                                   </Button>
                                   <Button
                                     size="xs"
                                     variant="outline"
-                                    onClick={() => openEditorForAsset(step.outputAssetId)}
+                                    onClick={() => openEditorForAsset(item.step.outputAssetId)}
                                   >
                                     {m.timeline_action_edit()}
                                   </Button>
                                   <Button
                                     size="xs"
                                     variant="outline"
-                                    onClick={() => void exportSingleAsset(step.outputAssetId)}
+                                    onClick={() => void exportSingleAsset(item.step.outputAssetId)}
                                   >
                                     {m.timeline_export_jpg()}
                                   </Button>
@@ -1331,27 +1560,27 @@ function ProjectWorkshopPage() {
                               </div>
                               {!collapsed && settings.nerdMode ? (
                                 <div className="bg-muted/30 col-span-full rounded-xl p-3 text-xs">
-                                  <p>{m.timeline_nerd_step_id({ id: step.id })}</p>
-                                  <p>{m.timeline_nerd_rotate({ value: String(step.operations.rotate) })}</p>
+                                  <p>{m.timeline_nerd_step_id({ id: item.step.id })}</p>
+                                  <p>{m.timeline_nerd_rotate({ value: String(item.step.operations.rotate) })}</p>
                                   <p>
                                     {m.timeline_nerd_brightness({
-                                      value: String(step.operations.brightness),
+                                      value: String(item.step.operations.brightness),
                                     })}
                                   </p>
                                   <p>
                                     {m.timeline_nerd_contrast({
-                                      value: String(step.operations.contrast),
+                                      value: String(item.step.operations.contrast),
                                     })}
                                   </p>
                                   <p>
                                     {m.timeline_nerd_saturation({
-                                      value: String(step.operations.saturation),
+                                      value: String(item.step.operations.saturation),
                                     })}
                                   </p>
-                                  <p>{m.timeline_nerd_blur({ value: String(step.operations.blur) })}</p>
+                                  <p>{m.timeline_nerd_blur({ value: String(item.step.operations.blur) })}</p>
                                   <p>
                                     {m.timeline_nerd_sharpen({
-                                      value: String(step.operations.sharpen),
+                                      value: String(item.step.operations.sharpen),
                                     })}
                                   </p>
                                 </div>
@@ -1368,6 +1597,47 @@ function ProjectWorkshopPage() {
           </Card>
         </section>
       </div>
+
+      <AlertDialog
+        open={projectIdPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setProjectIdPendingDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{m.project_delete()}</AlertDialogTitle>
+            <AlertDialogDescription>{m.project_delete_confirm_description()}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{m.common_close()}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                if (!projectIdPendingDelete) {
+                  return
+                }
+
+                await removeProjectAndRefresh(projectIdPendingDelete)
+                setProjectIdPendingDelete(null)
+
+                if (projectIdPendingDelete === project.id) {
+                  await navigate({ to: '/' })
+                  return
+                }
+
+                if (cleanupStateVisible) {
+                  await onLoadCleanup()
+                }
+              }}
+            >
+              {m.projects_delete()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <ImageEditorModal
         open={isEditorOpen}
