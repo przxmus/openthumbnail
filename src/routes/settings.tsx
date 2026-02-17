@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useState } from 'react'
 
 import { m } from '@/paraglide/messages.js'
 import { Button } from '@/components/ui/button'
@@ -46,6 +47,7 @@ function localeLabel(locale: 'en' | 'pl') {
 function SettingsPage() {
   const navigate = useNavigate()
   const { settings, updateSettings } = useSettings()
+  const [apiKeyVisible, setApiKeyVisible] = useState(false)
 
   return (
     <main className="from-background via-background to-muted/25 min-h-screen bg-gradient-to-b">
@@ -84,13 +86,28 @@ function SettingsPage() {
             </Label>
             <Input
               id="openrouter-key"
-              type="password"
+              type={apiKeyVisible ? 'text' : 'password'}
               placeholder="sk-or-v1-..."
               value={settings.openRouterApiKey}
               onChange={(event) => {
                 updateSettings({ openRouterApiKey: event.target.value })
               }}
             />
+            <div className="flex justify-start">
+              <Button
+                size="xs"
+                variant="ghost"
+                onClick={() => setApiKeyVisible((current) => !current)}
+              >
+                {apiKeyVisible
+                  ? settings.locale === 'pl'
+                    ? 'Ukryj klucz'
+                    : 'Hide key'
+                  : settings.locale === 'pl'
+                    ? 'Pokaż klucz'
+                    : 'Show key'}
+              </Button>
+            </div>
             <p className="text-muted-foreground text-xs">
               {m.settings_openrouter_hint()}
             </p>
@@ -118,11 +135,11 @@ function SettingsPage() {
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>{themeLabel(settings.themeMode)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {THEME_MODES.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
+                    <SelectItem key={mode} value={mode} label={themeLabel(mode)}>
                       {themeLabel(mode)}
                     </SelectItem>
                   ))}
@@ -142,11 +159,15 @@ function SettingsPage() {
                 }}
               >
                 <SelectTrigger className="w-full">
-                  <SelectValue />
+                  <SelectValue>{localeLabel(settings.locale)}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="en">{localeLabel('en')}</SelectItem>
-                  <SelectItem value="pl">{localeLabel('pl')}</SelectItem>
+                  <SelectItem value="en" label={localeLabel('en')}>
+                    {localeLabel('en')}
+                  </SelectItem>
+                  <SelectItem value="pl" label={localeLabel('pl')}>
+                    {localeLabel('pl')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
