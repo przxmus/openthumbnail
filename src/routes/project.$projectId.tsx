@@ -103,6 +103,7 @@ interface GenerationSource {
 interface PromptTimelineItem {
   id: string
   type: 'prompt'
+  sourceStepId: string
   createdAt: number
   input: GenerationInput
   sortGroupId: string
@@ -171,6 +172,7 @@ function ProjectWorkshopPage() {
     importBackup,
     cleanupCandidates,
     removeProjectAndRefresh,
+    removeTimelineStep,
     missingReferenceIdsByStep,
   } = useWorkshopProject(params.projectId)
 
@@ -292,6 +294,7 @@ function ProjectWorkshopPage() {
         items.push({
           id: step.id,
           type: 'prompt',
+          sourceStepId: step.id,
           createdAt: step.createdAt,
           input: step.input,
           sortGroupId: step.id,
@@ -325,6 +328,7 @@ function ProjectWorkshopPage() {
         items.push({
           id: `${step.id}:prompt`,
           type: 'prompt',
+          sourceStepId: step.id,
           createdAt: step.createdAt,
           input: step.input,
           sortGroupId: step.id,
@@ -668,6 +672,10 @@ function ProjectWorkshopPage() {
     setEditorSourceAssetId(assetId)
     setEditorOperations(DEFAULT_EDITOR_OPS)
     setIsEditorOpen(true)
+  }
+
+  const onDeleteTimelineStep = async (sourceStepId: string) => {
+    await removeTimelineStep(sourceStepId)
   }
 
   if (loading) {
@@ -1207,11 +1215,34 @@ function ProjectWorkshopPage() {
                                   <Button
                                     size="xs"
                                     variant="outline"
+                                    onClick={() => {
+                                      void onDeleteTimelineStep(item.sourceStepId)
+                                    }}
+                                  >
+                                    {m.timeline_action_delete()}
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
                                     onClick={() => toggleStepCollapsed(item.id)}
                                   >
                                     {collapsed ? m.timeline_expand() : m.timeline_collapse()}
                                   </Button>
                                 </div>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button size="xs" variant="outline" onClick={() => onReusePrompt(item.input)}>
+                                  {m.timeline_action_reuse_prompt()}
+                                </Button>
+                                <Button
+                                  size="xs"
+                                  variant="outline"
+                                  onClick={() => {
+                                    void onDeleteTimelineStep(item.sourceStepId)
+                                  }}
+                                >
+                                  {m.timeline_action_delete()}
+                                </Button>
                               </div>
                             </CardHeader>
                             <CardContent className="min-w-0 space-y-3 overflow-hidden">
@@ -1286,11 +1317,6 @@ function ProjectWorkshopPage() {
                                     )}
                                   </div>
 
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button size="xs" variant="outline" onClick={() => onReusePrompt(item.input)}>
-                                      {m.timeline_action_reuse_prompt()}
-                                    </Button>
-                                  </div>
                                 </>
                               )}
                             </CardContent>
@@ -1491,6 +1517,15 @@ function ProjectWorkshopPage() {
                                 <CardTitle className="text-base">{m.timeline_edit_step()}</CardTitle>
                                 <div className="flex items-center gap-2">
                                   <Badge>{formatDate(item.step.createdAt)}</Badge>
+                                  <Button
+                                    size="xs"
+                                    variant="outline"
+                                    onClick={() => {
+                                      void onDeleteTimelineStep(item.step.id)
+                                    }}
+                                  >
+                                    {m.timeline_action_delete()}
+                                  </Button>
                                   <Button
                                     size="xs"
                                     variant="outline"

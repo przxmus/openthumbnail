@@ -31,6 +31,7 @@ import {
   deletePersona,
   deletePersonaReferenceAsset,
   deleteProject,
+  deleteStepWithAssets,
   deleteReferenceAsset,
   exportProjectBackup,
   getAsset,
@@ -748,6 +749,14 @@ export function useWorkshopProject(projectId: string) {
     [reload],
   )
 
+  const removeTimelineStep = useCallback(
+    async (stepId: string) => {
+      await deleteStepWithAssets(stepId)
+      await reload({ preserveScroll: true })
+    },
+    [reload],
+  )
+
   const personaUsage = useCallback(async (persona: Persona) => {
     return collectUsageForPersona(persona)
   }, [])
@@ -812,6 +821,7 @@ export function useWorkshopProject(projectId: string) {
     importBackup,
     cleanupCandidates,
     removeProjectAndRefresh,
+    removeTimelineStep,
     personaUsage,
     missingReferenceIdsByStep,
   }

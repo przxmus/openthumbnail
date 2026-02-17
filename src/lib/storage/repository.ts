@@ -367,6 +367,62 @@ export async function upsertStep(step: TimelineStep) {
   }
 }
 
+export async function deleteStepWithAssets(stepId: string) {
+  const db = await getDb()
+  const step = await db.get('steps', stepId)
+
+  if (!step) {
+    return
+  }
+
+  const tx = db.transaction(['steps', 'assets', 'projects'], 'readwrite')
+  const stepsStore = tx.objectStore('steps')
+  const assetsStore = tx.objectStore('assets')
+
+  const deleteAssetIfProjectOwned = async (assetId: string) => {
+    const asset = await assetsStore.get(assetId)
+    if (asset?.scope === 'project') {
+      await assetsStore.delete(assetId)
+    }
+  }
+
+  if (step.type === 'generation') {
+    await stepsStore.delete(step.id)
+    for (const output of step.outputs) {
+      await deleteAssetIfProjectOwned(output.assetId)
+    }
+  } else if (step.type === 'generation-result') {
+    await stepsStore.delete(step.id)
+    for (const output of step.outputs) {
+      await deleteAssetIfProjectOwned(output.assetId)
+    }
+  } else if (step.type === 'prompt') {
+    await stepsStore.delete(step.id)
+    const linkedStep = step.linkedResultStepId
+      ? await stepsStore.get(step.linkedResultStepId)
+      : null
+    if (linkedStep?.type === 'generation-result') {
+      await stepsStore.delete(linkedStep.id)
+      for (const output of linkedStep.outputs) {
+        await deleteAssetIfProjectOwned(output.assetId)
+      }
+    }
+  } else if (step.type === 'edit') {
+    await stepsStore.delete(step.id)
+    await deleteAssetIfProjectOwned(step.outputAssetId)
+  }
+
+  const project = await tx.objectStore('projects').get(step.projectId)
+  if (project) {
+    await tx.objectStore('projects').put({
+      ...project,
+      updatedAt: Date.now(),
+    })
+  }
+
+  await tx.done
+}
+
 export async function listPersonas() {
   const db = await getDb()
   const personas = await db.getAllFromIndex('personas', 'by-updatedAt')
