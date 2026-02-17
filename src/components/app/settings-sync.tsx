@@ -1,10 +1,10 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 
 import { applyLocale, applyThemeMode } from '@/lib/i18n/runtime'
 import { loadSettings, onSettingsUpdated } from '@/lib/storage/settings'
 
 export function SettingsSync() {
-  useEffect(() => {
+  useLayoutEffect(() => {
     const initial = loadSettings()
     applyThemeMode(initial.themeMode)
     applyLocale(initial.locale)

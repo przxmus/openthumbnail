@@ -35,6 +35,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var settingsRaw=localStorage.getItem('openthumbnail.settings.v1');var mode='system';var locale='en';if(settingsRaw){var parsed=JSON.parse(settingsRaw);if(parsed&&typeof parsed.themeMode==='string'){mode=parsed.themeMode;}if(parsed&&typeof parsed.locale==='string'){locale=parsed.locale;}}if(!locale){locale=((navigator.language||'en').toLowerCase().startsWith('pl')?'pl':'en');}var isDark=mode==='dark'||(mode==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',isDark);document.documentElement.lang=locale;localStorage.setItem('PARAGLIDE_LOCALE',locale);}catch(e){}})();`,
+          }}
+        />
       </head>
       <body>
         <SettingsSync />
