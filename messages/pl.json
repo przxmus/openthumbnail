@@ -110,10 +110,10 @@
   "timeline_output": "Wynik",
   "timeline_missing_source": "Brak źródła",
   "timeline_missing_output": "Brak wyniku",
-  "timeline_export_jpg": "Eksport JPG",
+  "timeline_export_jpg": "Download",
   "timeline_action_remix": "Remix",
   "timeline_action_edit": "Edytuj",
-  "timeline_action_jpg": "JPG",
+  "timeline_action_jpg": "Download",
   "timeline_action_copy_prompt": "Kopiuj prompt",
   "timeline_action_copy_negative_prompt": "Kopiuj negative prompt",
   "timeline_action_reuse_prompt": "Użyj setupu",
@@ -162,5 +162,6 @@
   "timeline_nerd_sharpen": "Wyostrzenie: {value}",
   "asset_preview_unavailable": "Podgląd niedostępny",
   "generation_remix_asset_selected": "Wybrany obraz zostanie użyty jako referencja do remixa.",
-  "generation_outputs_single": "Wybrany model wspiera tylko pojedynczy wynik."
+  "generation_outputs_single": "Wybrany model wspiera tylko pojedynczy wynik.",
+  "generation_outputs_experimental": "Funkcja eksperymentalna: wybrany model może nie obsługiwać wielu wyników."
 }

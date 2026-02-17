@@ -126,10 +126,10 @@
   "timeline_output": "Output",
   "timeline_missing_source": "Missing source",
   "timeline_missing_output": "Missing output",
-  "timeline_export_jpg": "Export JPG",
+  "timeline_export_jpg": "Download",
   "timeline_action_remix": "Remix",
   "timeline_action_edit": "Edit",
-  "timeline_action_jpg": "JPG",
+  "timeline_action_jpg": "Download",
   "timeline_action_copy_prompt": "Copy prompt",
   "timeline_action_copy_negative_prompt": "Copy negative prompt",
   "timeline_action_reuse_prompt": "Reuse setup",
@@ -162,5 +162,6 @@
   "lightbox_prev": "Prev",
   "lightbox_next": "Next",
   "generation_remix_asset_selected": "Selected image will be used as remix reference.",
-  "generation_outputs_single": "Selected model supports a single output only."
+  "generation_outputs_single": "Selected model supports a single output only.",
+  "generation_outputs_experimental": "Experimental: selected model may not support multiple outputs."
 }
