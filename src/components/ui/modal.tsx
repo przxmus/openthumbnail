@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
 
 import { cn } from '@/lib/utils'
+import { lockBodyScroll, unlockBodyScroll } from '@/lib/services/scroll-lock'
 
 interface ModalProps {
   open: boolean
@@ -35,8 +36,7 @@ export function Modal({
       return
     }
 
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    lockBodyScroll()
 
     const onEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -47,7 +47,7 @@ export function Modal({
     window.addEventListener('keydown', onEscape)
 
     return () => {
-      document.body.style.overflow = previous
+      unlockBodyScroll()
       window.removeEventListener('keydown', onEscape)
     }
   }, [onClose, open])

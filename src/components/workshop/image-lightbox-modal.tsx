@@ -5,6 +5,7 @@ import type { OutputAsset } from '@/types/workshop'
 import { m } from '@/paraglide/messages.js'
 import { useObjectUrl } from '@/lib/hooks/use-object-url'
 import { cn } from '@/lib/utils'
+import { lockBodyScroll, unlockBodyScroll } from '@/lib/services/scroll-lock'
 import { Button } from '@/components/ui/button'
 
 interface LightboxGalleryItem {
@@ -105,8 +106,7 @@ export function ImageLightboxModal({
       return
     }
 
-    const previous = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    lockBodyScroll()
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -130,7 +130,7 @@ export function ImageLightboxModal({
     window.addEventListener('keydown', onKeyDown)
 
     return () => {
-      document.body.style.overflow = previous
+      unlockBodyScroll()
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [goNext, goPrev, onClose, open])

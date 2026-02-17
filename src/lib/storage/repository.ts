@@ -148,6 +148,14 @@ export async function duplicateProject(projectId: string) {
         projectId: newProject.id,
         createdAt: Date.now(),
         promptStepId: stepIdMap.get(step.promptStepId) ?? step.promptStepId,
+        inputSnapshot: step.inputSnapshot
+          ? {
+              ...step.inputSnapshot,
+              referenceAssetIds: step.inputSnapshot.referenceAssetIds.map(
+                (assetId) => idMap.get(assetId) ?? assetId,
+              ),
+            }
+          : undefined,
         remixOfStepId: step.remixOfStepId
           ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
           : undefined,
@@ -692,6 +700,14 @@ export async function importProjectBackup(file: File) {
         projectId: newProjectId,
         createdAt: Date.now(),
         promptStepId: stepIdMap.get(step.promptStepId) ?? step.promptStepId,
+        inputSnapshot: step.inputSnapshot
+          ? {
+              ...step.inputSnapshot,
+              referenceAssetIds: step.inputSnapshot.referenceAssetIds.map(
+                (assetId) => assetIdMap.get(assetId) ?? assetId,
+              ),
+            }
+          : undefined,
         remixOfStepId: step.remixOfStepId
           ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
           : undefined,

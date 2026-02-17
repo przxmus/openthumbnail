@@ -752,22 +752,59 @@ export function useWorkshopProject(projectId: string) {
 
   const removeTimelineStep = useCallback(
     async (stepId: string) => {
-      await deleteStepWithAssets(stepId)
-      await reload({ preserveScroll: true })
+      const step = steps.find((entry) => entry.id === stepId)
+      if (!step) {
+        return
+      }
+
+      const previousSteps = steps
+      const previousAssets = assets
+
+      let nextAssets = assets
+      if (step.type === 'generation' || step.type === 'generation-result') {
+        nextAssets = removeAssets(
+          assets,
+          step.outputs.map((output) => output.assetId),
+        )
+      } else if (step.type === 'edit') {
+        nextAssets = removeAssets(assets, [step.outputAssetId])
+      }
+
+      setSteps((current) => current.filter((entry) => entry.id !== stepId))
+      setAssets(nextAssets)
+
+      try {
+        await deleteStepWithAssets(stepId)
+      } catch (error) {
+        setSteps(previousSteps)
+        setAssets(previousAssets)
+        throw error
+      }
     },
-    [reload],
+    [assets, steps],
   )
 
   const restoreTimelineStep = useCallback(
     async (snapshot: { step: TimelineStep; assets: Array<OutputAsset> }) => {
-      for (const asset of snapshot.assets) {
-        await upsertAsset(asset)
-      }
+      const previousSteps = steps
+      const previousAssets = assets
 
-      await upsertStep(snapshot.step)
-      await reload({ preserveScroll: true })
+      setAssets((current) => mergeAssets(current, snapshot.assets))
+      setSteps((current) => [...current, snapshot.step].sort(byStepOrder))
+
+      try {
+        for (const asset of snapshot.assets) {
+          await upsertAsset(asset)
+        }
+
+        await upsertStep(snapshot.step)
+      } catch (error) {
+        setSteps(previousSteps)
+        setAssets(previousAssets)
+        throw error
+      }
     },
-    [reload],
+    [assets, steps],
   )
 
   const personaUsage = useCallback(async (persona: Persona) => {

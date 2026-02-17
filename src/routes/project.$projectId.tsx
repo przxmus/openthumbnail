@@ -729,19 +729,20 @@ function ProjectWorkshopPage() {
       return
     }
 
-    const snapshot = buildUndoEntry(timelineStepPendingDelete.id)
+    const pending = timelineStepPendingDelete
+    setTimelineStepPendingDelete(null)
+
+    const snapshot = buildUndoEntry(pending.id)
     if (!snapshot) {
-      setTimelineStepPendingDelete(null)
       return
     }
 
     setHistoryBusy(true)
     try {
-      await removeTimelineStep(timelineStepPendingDelete.id)
+      await removeTimelineStep(pending.id)
       setUndoStack((current) => [...current, snapshot])
       setRedoStack([])
     } finally {
-      setTimelineStepPendingDelete(null)
       setHistoryBusy(false)
     }
   }
@@ -866,13 +867,13 @@ function ProjectWorkshopPage() {
 
   return (
     <main
-      className="from-background via-background to-muted/25 min-h-screen bg-gradient-to-br"
+      className="from-background via-background to-muted/25 h-screen overflow-hidden bg-gradient-to-br"
       onPaste={(event) => {
         void onPasteReferences(event)
       }}
     >
-      <div className="mx-auto grid w-full max-w-[1600px] min-w-0 gap-6 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
-        <section className="min-w-0 space-y-4">
+      <div className="mx-auto grid h-full w-full max-w-[1600px] min-w-0 gap-6 px-4 py-4 md:px-8 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+        <section className="pretty-scroll min-h-0 space-y-4 overflow-y-auto pr-1">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between gap-3">
@@ -1347,8 +1348,8 @@ function ProjectWorkshopPage() {
           ) : null}
         </section>
 
-        <section className="min-w-0">
-          <Card className="min-h-[80vh]">
+        <section className="pretty-scroll min-h-0 overflow-y-auto pr-1">
+          <Card className="h-full min-h-[80vh]">
             <CardHeader>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
@@ -1421,15 +1422,6 @@ function ProjectWorkshopPage() {
                               <div className="flex flex-wrap gap-2">
                                 <Button size="xs" variant="outline" onClick={() => onReusePrompt(item.input)}>
                                   {m.timeline_action_reuse_prompt()}
-                                </Button>
-                                <Button
-                                  size="xs"
-                                  variant="destructive"
-                                  onClick={() => {
-                                    onRequestDeleteTimelineStep(item.sourceStepId, m.timeline_prompt())
-                                  }}
-                                >
-                                  {m.timeline_action_delete()}
                                 </Button>
                               </div>
                             </CardHeader>
@@ -1914,10 +1906,11 @@ function ProjectWorkshopPage() {
                   return
                 }
 
-                await removeProjectAndRefresh(projectIdPendingDelete)
+                const deletingProjectId = projectIdPendingDelete
                 setProjectIdPendingDelete(null)
+                await removeProjectAndRefresh(deletingProjectId)
 
-                if (projectIdPendingDelete === project.id) {
+                if (deletingProjectId === project.id) {
                   await navigate({ to: '/' })
                   return
                 }

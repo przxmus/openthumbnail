@@ -232,13 +232,14 @@ function ProjectsPage() {
                   return
                 }
 
-                setPendingId(projectIdPendingDelete)
+                const deletingProjectId = projectIdPendingDelete
+                setProjectIdPendingDelete(null)
+                setPendingId(deletingProjectId)
 
                 try {
-                  await remove(projectIdPendingDelete)
+                  await remove(deletingProjectId)
                 } finally {
                   setPendingId(null)
-                  setProjectIdPendingDelete(null)
                 }
               }}
             >
