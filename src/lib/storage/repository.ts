@@ -93,9 +93,14 @@ export async function duplicateProject(projectId: string) {
 
   const now = Date.now()
   const idMap = new Map<string, string>()
+  const stepIdMap = new Map<string, string>()
 
   for (const asset of sourceAssets) {
     idMap.set(asset.id, newId('asset'))
+  }
+
+  for (const step of sourceSteps) {
+    stepIdMap.set(step.id, newId('step'))
   }
 
   const newProject: Project = {
@@ -115,10 +120,48 @@ export async function duplicateProject(projectId: string) {
   }))
 
   const clonedSteps: Array<TimelineStep> = sourceSteps.map((step) => {
+    if (step.type === 'prompt') {
+      return {
+        ...step,
+        id: stepIdMap.get(step.id) ?? newId('step'),
+        projectId: newProject.id,
+        createdAt: Date.now(),
+        linkedResultStepId: step.linkedResultStepId
+          ? stepIdMap.get(step.linkedResultStepId) ?? undefined
+          : undefined,
+        remixOfStepId: step.remixOfStepId
+          ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
+          : undefined,
+        input: {
+          ...step.input,
+          referenceAssetIds: step.input.referenceAssetIds.map(
+            (assetId) => idMap.get(assetId) ?? assetId,
+          ),
+        },
+      }
+    }
+
+    if (step.type === 'generation-result') {
+      return {
+        ...step,
+        id: stepIdMap.get(step.id) ?? newId('step'),
+        projectId: newProject.id,
+        createdAt: Date.now(),
+        promptStepId: stepIdMap.get(step.promptStepId) ?? step.promptStepId,
+        remixOfStepId: step.remixOfStepId
+          ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
+          : undefined,
+        outputs: step.outputs.map((output) => ({
+          ...output,
+          assetId: idMap.get(output.assetId) ?? output.assetId,
+        })),
+      }
+    }
+
     if (step.type === 'generation') {
       return {
         ...step,
-        id: newId('step'),
+        id: stepIdMap.get(step.id) ?? newId('step'),
         projectId: newProject.id,
         createdAt: Date.now(),
         input: {
@@ -136,7 +179,7 @@ export async function duplicateProject(projectId: string) {
 
     return {
       ...step,
-      id: newId('step'),
+      id: stepIdMap.get(step.id) ?? newId('step'),
       projectId: newProject.id,
       createdAt: Date.now(),
       sourceAssetId: idMap.get(step.sourceAssetId) ?? step.sourceAssetId,
@@ -293,6 +336,37 @@ export async function appendStep(step: TimelineStep) {
   }
 }
 
+export async function upsertStep(step: TimelineStep) {
+  const db = await getDb()
+
+  try {
+    const tx = db.transaction(['steps', 'projects'], 'readwrite')
+    await tx.objectStore('steps').put(step)
+
+    const project = await tx.objectStore('projects').get(step.projectId)
+    if (project) {
+      await tx.objectStore('projects').put({
+        ...project,
+        updatedAt: Date.now(),
+      })
+    }
+
+    await tx.done
+    return step
+  } catch (error) {
+    if (isQuotaExceededError(error)) {
+      const cleanupState: QuotaCleanupState = {
+        reason: 'Local storage quota exceeded while writing timeline steps.',
+        at: Date.now(),
+      }
+
+      throw cleanupState
+    }
+
+    throw error
+  }
+}
+
 export async function listPersonas() {
   const db = await getDb()
   const personas = await db.getAllFromIndex('personas', 'by-updatedAt')
@@ -381,10 +455,26 @@ export async function deletePersona(personaId: string) {
 export async function collectUsageForPersona(persona: Persona) {
   const db = await getDb()
   const steps = await db.getAll('steps')
+  const promptStepIdsWithPersona = new Set(
+    steps
+      .filter(
+        (step): step is Extract<TimelineStep, { type: 'prompt' }> =>
+          step.type === 'prompt' && step.input.personaIds.includes(persona.id),
+      )
+      .map((step) => step.id),
+  )
 
-  return steps.filter(
-    (step) => step.type === 'generation' && step.input.personaIds.includes(persona.id),
-  ).length
+  return steps.filter((step) => {
+    if (step.type === 'generation') {
+      return step.input.personaIds.includes(persona.id)
+    }
+
+    if (step.type === 'generation-result') {
+      return promptStepIdsWithPersona.has(step.promptStepId)
+    }
+
+    return false
+  }).length
 }
 
 export async function collectCleanupCandidates() {
@@ -417,6 +507,12 @@ export async function exportProjectBackup(projectId: string) {
 
   const usedPersonaIds = new Set<string>()
   for (const step of steps) {
+    if (step.type === 'prompt') {
+      for (const personaId of step.input.personaIds) {
+        usedPersonaIds.add(personaId)
+      }
+    }
+
     if (step.type === 'generation') {
       for (const personaId of step.input.personaIds) {
         usedPersonaIds.add(personaId)
@@ -474,6 +570,7 @@ export async function importProjectBackup(file: File) {
 
   const sourceProject = manifest.project
   const newProjectId = newId('project')
+  const stepIdMap = new Map<string, string>()
 
   const project: Project = {
     ...sourceProject,
@@ -512,10 +609,51 @@ export async function importProjectBackup(file: File) {
   }
 
   const restoredSteps: Array<TimelineStep> = manifest.steps.map((step) => {
+    stepIdMap.set(step.id, newId('step'))
+    return step
+  }).map((step) => {
+    if (step.type === 'prompt') {
+      return {
+        ...step,
+        id: stepIdMap.get(step.id) ?? newId('step'),
+        projectId: newProjectId,
+        createdAt: Date.now(),
+        linkedResultStepId: step.linkedResultStepId
+          ? stepIdMap.get(step.linkedResultStepId) ?? undefined
+          : undefined,
+        remixOfStepId: step.remixOfStepId
+          ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
+          : undefined,
+        input: {
+          ...step.input,
+          referenceAssetIds: step.input.referenceAssetIds.map(
+            (assetId) => assetIdMap.get(assetId) ?? assetId,
+          ),
+        },
+      }
+    }
+
+    if (step.type === 'generation-result') {
+      return {
+        ...step,
+        id: stepIdMap.get(step.id) ?? newId('step'),
+        projectId: newProjectId,
+        createdAt: Date.now(),
+        promptStepId: stepIdMap.get(step.promptStepId) ?? step.promptStepId,
+        remixOfStepId: step.remixOfStepId
+          ? stepIdMap.get(step.remixOfStepId) ?? step.remixOfStepId
+          : undefined,
+        outputs: step.outputs.map((output) => ({
+          ...output,
+          assetId: assetIdMap.get(output.assetId) ?? output.assetId,
+        })),
+      }
+    }
+
     if (step.type === 'generation') {
       return {
         ...step,
-        id: newId('step'),
+        id: stepIdMap.get(step.id) ?? newId('step'),
         projectId: newProjectId,
         createdAt: Date.now(),
         input: {
@@ -533,7 +671,7 @@ export async function importProjectBackup(file: File) {
 
     return {
       ...step,
-      id: newId('step'),
+      id: stepIdMap.get(step.id) ?? newId('step'),
       projectId: newProjectId,
       createdAt: Date.now(),
       sourceAssetId: assetIdMap.get(step.sourceAssetId) ?? step.sourceAssetId,

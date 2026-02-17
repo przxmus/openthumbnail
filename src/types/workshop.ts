@@ -6,7 +6,7 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 
 export type AppLocale = 'en' | 'pl'
 
-export type TimelineStepType = 'generation' | 'edit'
+export type TimelineStepType = 'prompt' | 'generation-result' | 'generation' | 'edit'
 
 export type AssetScope = 'project' | 'global'
 
@@ -76,7 +76,7 @@ export interface GenerationAttemptTrace {
   responsePayload?: Record<string, unknown>
 }
 
-export interface GenerationStep {
+export interface LegacyGenerationStep {
   id: string
   projectId: string
   type: 'generation'
@@ -88,6 +88,31 @@ export interface GenerationStep {
   status: 'pending' | 'completed' | 'failed'
   error?: string
   trace?: GenerationTrace
+}
+
+export interface PromptStep {
+  id: string
+  projectId: string
+  type: 'prompt'
+  createdAt: number
+  input: GenerationInput
+  linkedResultStepId?: string
+  remixOfStepId?: string
+  remixOfAssetId?: string
+}
+
+export interface GenerationResultStep {
+  id: string
+  projectId: string
+  type: 'generation-result'
+  createdAt: number
+  promptStepId: string
+  status: 'pending' | 'completed' | 'failed'
+  outputs: Array<GenerationOutput>
+  error?: string
+  trace?: GenerationTrace
+  remixOfStepId?: string
+  remixOfAssetId?: string
 }
 
 export interface EditOperations {
@@ -113,7 +138,11 @@ export interface EditStep {
   operations: EditOperations
 }
 
-export type TimelineStep = GenerationStep | EditStep
+export type TimelineStep =
+  | PromptStep
+  | GenerationResultStep
+  | LegacyGenerationStep
+  | EditStep
 
 export interface OutputAsset {
   id: string
@@ -142,6 +171,7 @@ export interface ModelCapability {
   supportsImages: boolean
   supportsReferences: boolean
   supportsNegativePrompt: boolean
+  supportsMultiOutput: boolean
   maxOutputs?: number
   availability: 'available' | 'unavailable'
   description?: string

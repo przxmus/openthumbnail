@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type {
   EditOperations,
-  GenerationStep,
+  GenerationResultStep,
+  LegacyGenerationStep,
   ModelCapability,
   OutputAsset,
   Persona,
+  PromptStep,
   Project,
   QuotaCleanupState,
   TimelineStep,
@@ -41,6 +43,7 @@ import {
   renamePersona,
   setPersonaReferenceAssetIds,
   touchProject,
+  upsertStep,
   updateProject,
   upsertAsset,
   upsertPersona,
@@ -463,7 +466,7 @@ export function useWorkshopProject(projectId: string) {
       const model = params.modelCapability
       const supportsReferences = model?.supportsReferences ?? false
       const supportsNegativePrompt = model?.supportsNegativePrompt ?? false
-      const maxOutputs = model?.maxOutputs ?? 1
+      const maxOutputs = model?.maxOutputs ?? (model?.supportsMultiOutput ? 3 : 1)
 
       const outputCount = Math.max(
         1,
@@ -494,7 +497,44 @@ export function useWorkshopProject(projectId: string) {
       setError(null)
       setQuotaState(null)
 
+      const promptStep: PromptStep = {
+        id: newId('step'),
+        projectId: project.id,
+        type: 'prompt',
+        createdAt: Date.now(),
+        input: {
+          modelId: params.modelId,
+          prompt,
+          negativePrompt,
+          referenceAssetIds,
+          personaIds: params.personaIds,
+          aspectRatio: params.aspectRatio,
+          resolutionPreset: params.resolutionPreset,
+          outputCount,
+        },
+        remixOfStepId: params.remixOfStepId,
+        remixOfAssetId: params.remixOfAssetId,
+      }
+
+      const pendingStep: GenerationResultStep = {
+        id: newId('step'),
+        projectId: project.id,
+        type: 'generation-result',
+        createdAt: Date.now(),
+        promptStepId: promptStep.id,
+        status: 'pending',
+        outputs: [],
+        remixOfStepId: params.remixOfStepId,
+        remixOfAssetId: params.remixOfAssetId,
+      }
+
+      promptStep.linkedResultStepId = pendingStep.id
+
       try {
+        await appendStep(promptStep)
+        await appendStep(pendingStep)
+        setSteps((current) => [...current, promptStep, pendingStep].sort(byStepOrder))
+
         const generation = await runGeneration({
           apiKey,
           input: {
@@ -515,7 +555,7 @@ export function useWorkshopProject(projectId: string) {
           remixOfAssetId: params.remixOfAssetId,
         })
 
-        const outputs: GenerationStep['outputs'] = []
+        const outputs: LegacyGenerationStep['outputs'] = []
 
         for (const output of generation.outputs) {
           const asset: OutputAsset = {
@@ -543,29 +583,17 @@ export function useWorkshopProject(projectId: string) {
           })
         }
 
-        const step: GenerationStep = {
-          id: newId('step'),
-          projectId: project.id,
-          type: 'generation',
-          createdAt: Date.now(),
-          input: {
-            modelId: params.modelId,
-            prompt,
-            negativePrompt,
-            referenceAssetIds,
-            personaIds: params.personaIds,
-            aspectRatio: params.aspectRatio,
-            resolutionPreset: params.resolutionPreset,
-            outputCount,
-          },
-          outputs,
-          remixOfStepId: params.remixOfStepId,
-          remixOfAssetId: params.remixOfAssetId,
+        const completedStep: GenerationResultStep = {
+          ...pendingStep,
           status: 'completed',
+          outputs,
           trace: generation.trace,
         }
 
-        await appendStep(step)
+        await upsertStep(completedStep)
+        setSteps((current) =>
+          current.map((step) => (step.id === pendingStep.id ? completedStep : step)),
+        )
 
         await updateProjectDefaults({
           defaultModel: params.modelId,
@@ -582,6 +610,18 @@ export function useWorkshopProject(projectId: string) {
 
         await reload({ preserveScroll: true })
       } catch (reason) {
+        const failedStep: GenerationResultStep = {
+          ...pendingStep,
+          status: 'failed',
+          outputs: [],
+          error: reason instanceof Error ? reason.message : 'Generation failed',
+        }
+
+        await upsertStep(failedStep)
+        setSteps((current) =>
+          current.map((step) => (step.id === pendingStep.id ? failedStep : step)),
+        )
+
         if (isQuotaCleanupState(reason)) {
           setQuotaState(reason)
         } else {
@@ -718,7 +758,7 @@ export function useWorkshopProject(projectId: string) {
     const missingByStep = new Map<string, Array<string>>()
 
     for (const step of steps) {
-      if (step.type !== 'generation') {
+      if (step.type !== 'generation' && step.type !== 'prompt') {
         continue
       }
 
