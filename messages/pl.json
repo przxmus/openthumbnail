@@ -113,6 +113,7 @@
   "timeline_export_jpg": "Download",
   "timeline_action_remix": "Remix",
   "timeline_action_edit": "Edytuj",
+  "timeline_action_delete": "Usuń",
   "timeline_action_jpg": "Download",
   "timeline_action_copy_prompt": "Kopiuj prompt",
   "timeline_action_copy_negative_prompt": "Kopiuj negative prompt",
