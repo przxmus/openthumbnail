@@ -24,6 +24,8 @@ interface OpenRouterFrontendModel {
     is_hidden?: boolean
     is_disabled?: boolean
     has_chat_completions?: boolean
+    per_request_limits?: Record<string, unknown> | null
+    supported_parameters?: Array<string>
   }
 }
 
@@ -91,6 +93,44 @@ function isLikelyNegativePromptCapable(model: {
   return /(flux|stable|sd|imagen|ideogram|recraft|playground|image)/.test(text)
 }
 
+function extractMaxOutputsFromUnknown(value: unknown): number | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined
+  }
+
+  const entries = Object.entries(value as Record<string, unknown>)
+  for (const [key, nested] of entries) {
+    const normalized = key.toLowerCase()
+    const mayContainOutputs = /(max|limit|num|count|images|outputs|n)/.test(normalized)
+    if (mayContainOutputs && typeof nested === 'number' && Number.isFinite(nested) && nested > 1) {
+      return Math.floor(nested)
+    }
+
+    if (nested && typeof nested === 'object') {
+      const nestedResult = extractMaxOutputsFromUnknown(nested)
+      if (nestedResult && nestedResult > 1) {
+        return nestedResult
+      }
+    }
+  }
+
+  return undefined
+}
+
+function parseMaxOutputsFromText(text: string): number | undefined {
+  const match = text.match(/(?:up to|max(?:imum)?|supports?)\s+(\d{1,2})\s+(?:images?|outputs?)/i)
+  if (!match) {
+    return undefined
+  }
+
+  const parsed = Number(match[1])
+  return Number.isFinite(parsed) && parsed > 1 ? parsed : undefined
+}
+
+function detectMultiOutputFromText(text: string) {
+  return /(multiple|multi-output|multi output|several)\s+(?:images?|outputs?)/i.test(text)
+}
+
 function isImageGenerationModel(model: {
   id: string
   name: string
@@ -123,7 +163,10 @@ export function getCachedModelCatalog() {
     return null
   }
 
-  return cache.models
+  return cache.models.map((model) => ({
+    ...model,
+    supportsMultiOutput: model.supportsMultiOutput ?? false,
+  }))
 }
 
 export async function listOpenRouterImageModels(apiKey: string) {
@@ -138,12 +181,23 @@ export async function listOpenRouterImageModels(apiKey: string) {
       .filter((model) => !model.endpoint?.is_hidden && !model.endpoint?.is_disabled)
       .filter((model) => (model.output_modalities ?? []).includes('image'))
       .map<ModelCapability>((model) => ({
+        ...(() => {
+          const compositeText = `${model.name} ${model.description ?? ''}`
+          const maxFromLimits = extractMaxOutputsFromUnknown(model.endpoint?.per_request_limits)
+          const maxFromText = parseMaxOutputsFromText(compositeText)
+          const maxOutputs = maxFromLimits ?? maxFromText
+          const supportsMultiOutput = Boolean(maxOutputs && maxOutputs > 1) || detectMultiOutputFromText(compositeText)
+
+          return {
+            supportsMultiOutput,
+            maxOutputs,
+          }
+        })(),
         id: model.slug,
         name: model.name,
         supportsImages: true,
         supportsReferences: (model.input_modalities ?? []).includes('image'),
         supportsNegativePrompt: isLikelyNegativePromptCapable(model),
-        maxOutputs: undefined,
         availability: 'available',
         description: model.description,
         supportsChatCompletions: model.endpoint?.has_chat_completions,
@@ -170,6 +224,11 @@ export async function listOpenRouterImageModels(apiKey: string) {
         const expired = Boolean(
           model.expirationDate && new Date(model.expirationDate).getTime() < now,
         )
+        const compositeText = `${model.id} ${model.name} ${model.description ?? ''}`
+        const maxOutputs = extractMaxOutputsFromUnknown(model.perRequestLimits)
+          ?? parseMaxOutputsFromText(compositeText)
+        const supportsMultiOutput = Boolean(maxOutputs && maxOutputs > 1)
+          || detectMultiOutputFromText(compositeText)
 
         return {
           id: model.id,
@@ -177,7 +236,8 @@ export async function listOpenRouterImageModels(apiKey: string) {
           supportsImages: true,
           supportsReferences: model.architecture.inputModalities.includes('image'),
           supportsNegativePrompt: isLikelyNegativePromptCapable(model),
-          maxOutputs: undefined,
+          supportsMultiOutput,
+          maxOutputs,
           availability: expired ? 'unavailable' : 'available',
           description: model.description,
           catalogSource: 'v1',
@@ -191,6 +251,7 @@ export async function listOpenRouterImageModels(apiKey: string) {
     if (cached && cached.models.length) {
       return cached.models.map((model) => ({
         ...model,
+        supportsMultiOutput: model.supportsMultiOutput ?? false,
         catalogSource: model.catalogSource ?? 'cache',
       }))
     }
