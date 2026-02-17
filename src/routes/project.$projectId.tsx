@@ -930,58 +930,21 @@ function ProjectWorkshopPage() {
         void onPasteReferences(event)
       }}
     >
-      <div className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-4 md:px-8">
-        <Card className="mb-4">
-          <CardHeader className="pb-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-muted-foreground text-xs tracking-[0.2em] uppercase">
-                  {m.project_label()}
-                </p>
-                <CardTitle className="mt-1 text-xl">{project.name}</CardTitle>
-                <CardDescription className="mt-1">
-                  {m.project_updated({ date: formatDate(project.updatedAt) })}
-                </CardDescription>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => navigate({ to: '/' })}
-                >
-                  {m.projects_title()}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => void exportBackup()}
-                >
-                  {m.project_backup_export()}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => backupInputRef.current?.click()}
-                >
-                  {m.project_backup_import()}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="destructive"
-                  onClick={() => {
-                    setProjectIdPendingDelete(project.id)
-                  }}
-                >
-                  {m.project_delete()}
-                </Button>
-              </div>
+      <div className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-3 md:px-8">
+        <div className="bg-card mb-3 grid gap-2 rounded-2xl border p-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+          <div className="grid min-w-0 gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-muted-foreground text-[11px] tracking-[0.12em] uppercase">
+                {m.project_label()}
+              </span>
+              <span className="text-muted-foreground text-xs">
+                {m.project_updated({ date: formatDate(project.updatedAt) })}
+              </span>
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-2 pt-0 sm:max-w-md">
-            <Label htmlFor="project-name">{m.project_name_label()}</Label>
             <Input
               id="project-name"
               value={project.name}
+              className="h-8"
               onChange={async (event) => {
                 await updateProjectDefaults({ name: event.target.value })
               }}
@@ -1001,11 +964,43 @@ function ProjectWorkshopPage() {
                 event.target.value = ''
               }}
             />
-          </CardContent>
-        </Card>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => navigate({ to: '/' })}
+            >
+              {m.projects_title()}
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => void exportBackup()}
+            >
+              {m.project_backup_export()}
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => backupInputRef.current?.click()}
+            >
+              {m.project_backup_import()}
+            </Button>
+            <Button
+              size="xs"
+              variant="destructive"
+              onClick={() => {
+                setProjectIdPendingDelete(project.id)
+              }}
+            >
+              {m.project_delete()}
+            </Button>
+          </div>
+        </div>
 
         <div className="grid items-start gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-          <aside className="space-y-3 xl:sticky xl:top-4 xl:max-h-[calc(100vh-2rem)]">
+          <aside className="space-y-2 xl:sticky xl:top-2">
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle>{m.generation_title()}</CardTitle>
@@ -1045,30 +1040,6 @@ function ProjectWorkshopPage() {
                   <p className="text-destructive text-xs">
                     {m.generation_model_unavailable()}
                   </p>
-                ) : null}
-
-                <Label htmlFor="prompt">{m.generation_prompt_label()}</Label>
-                <Textarea
-                  id="prompt"
-                  value={prompt}
-                  placeholder={m.generation_prompt_placeholder()}
-                  onChange={(event) => setPrompt(event.target.value)}
-                />
-
-                {supportsNegativePrompt ? (
-                  <>
-                    <Label htmlFor="negative-prompt">
-                      {m.generation_negative_label()}
-                    </Label>
-                    <Textarea
-                      id="negative-prompt"
-                      value={negativePrompt}
-                      placeholder={m.generation_negative_placeholder()}
-                      onChange={(event) =>
-                        setNegativePrompt(event.target.value)
-                      }
-                    />
-                  </>
                 ) : null}
 
                 <div className="grid min-w-0 gap-2 sm:grid-cols-2">
@@ -1500,6 +1471,35 @@ function ProjectWorkshopPage() {
           </aside>
 
           <section className="min-w-0">
+            <Card className="mb-3">
+              <CardHeader className="pb-3">
+                <CardTitle>{m.generation_prompt_label()}</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-2.5 pt-0">
+                <Textarea
+                  id="prompt"
+                  value={prompt}
+                  placeholder={m.generation_prompt_placeholder()}
+                  onChange={(event) => setPrompt(event.target.value)}
+                />
+                {supportsNegativePrompt ? (
+                  <>
+                    <Label htmlFor="negative-prompt">
+                      {m.generation_negative_label()}
+                    </Label>
+                    <Textarea
+                      id="negative-prompt"
+                      value={negativePrompt}
+                      placeholder={m.generation_negative_placeholder()}
+                      onChange={(event) =>
+                        setNegativePrompt(event.target.value)
+                      }
+                    />
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
+
             <Card className="min-h-[70vh]">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
