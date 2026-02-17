@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import type { LightboxContext, OutputAsset, Persona } from '@/types/workshop'
 import { m } from '@/paraglide/messages.js'
@@ -6,6 +6,14 @@ import { AssetThumb } from '@/components/workshop/asset-thumb'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import { HugeiconsIcon } from '@hugeicons/react'
+import {
+  CheckmarkCircle02Icon,
+  Delete02Icon,
+  ImageAdd02Icon,
+  PlusSignIcon,
+  UserMultiple02Icon,
+} from '@hugeicons/core-free-icons'
 
 interface PersonaManagerModalProps {
   open: boolean
@@ -40,6 +48,7 @@ export function PersonaManagerModal({
   const [newPersonaName, setNewPersonaName] = useState('')
   const [renameValue, setRenameValue] = useState('')
   const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open) {
@@ -53,7 +62,8 @@ export function PersonaManagerModal({
     }
 
     const nextId =
-      activePersonaId && personas.some((persona) => persona.id === activePersonaId)
+      activePersonaId &&
+      personas.some((persona) => persona.id === activePersonaId)
         ? activePersonaId
         : personas[0].id
 
@@ -77,6 +87,27 @@ export function PersonaManagerModal({
       .filter((asset): asset is OutputAsset => Boolean(asset))
   }, [activePersona, assetsMap])
 
+  const handleCreate = async () => {
+    if (busy || !newPersonaName.trim()) return
+    setBusy(true)
+    try {
+      await onCreatePersona(newPersonaName)
+      setNewPersonaName('')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRename = async () => {
+    if (busy || !renameValue.trim() || !activePersona) return
+    setBusy(true)
+    try {
+      await onRenamePersona(activePersona.id, renameValue)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <Modal
       open={open}
@@ -86,55 +117,41 @@ export function PersonaManagerModal({
       closeLabel={m.common_close()}
       size="xl"
     >
-      <div className="grid min-h-[70vh] gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <section className="bg-muted/20 ring-border/60 flex min-h-0 flex-col gap-3 rounded-3xl p-4 ring-1">
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-[0.22em]">
-              {m.personas_title()}
-            </p>
+      <div className="grid min-h-[70vh] gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+        {/* ── Left: persona list ── */}
+        <section className="border-border/50 bg-muted/30 flex min-h-0 flex-col gap-3 rounded-2xl border p-4">
+          <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-widest uppercase">
+            <HugeiconsIcon icon={UserMultiple02Icon} size={14} />
+            {m.personas_title()}
           </div>
 
-          <div className="grid gap-2 rounded-2xl bg-card p-3 ring-1 ring-border/60">
+          {/* create form */}
+          <div className="flex gap-2">
             <Input
               placeholder={m.persona_create_label()}
               value={newPersonaName}
               onChange={(event) => setNewPersonaName(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key !== 'Enter' || busy || !newPersonaName.trim()) {
-                  return
+                if (event.key === 'Enter') {
+                  event.preventDefault()
+                  void handleCreate()
                 }
-
-                event.preventDefault()
-                void (async () => {
-                  setBusy(true)
-                  try {
-                    await onCreatePersona(newPersonaName)
-                    setNewPersonaName('')
-                  } finally {
-                    setBusy(false)
-                  }
-                })()
               }}
+              className="flex-1"
             />
             <Button
+              size="icon-sm"
               disabled={busy || !newPersonaName.trim()}
-              onClick={async () => {
-                setBusy(true)
-                try {
-                  await onCreatePersona(newPersonaName)
-                  setNewPersonaName('')
-                } finally {
-                  setBusy(false)
-                }
-              }}
+              onClick={() => void handleCreate()}
             >
-              {m.persona_create_button()}
+              <HugeiconsIcon icon={PlusSignIcon} size={16} />
             </Button>
           </div>
 
-          <div className="min-h-0 flex-1 space-y-2 overflow-auto pr-1">
+          {/* persona list */}
+          <div className="pretty-scroll min-h-0 flex-1 space-y-1.5 overflow-auto pr-1">
             {personas.length === 0 ? (
-              <p className="text-muted-foreground rounded-xl border border-dashed border-border/70 p-3 text-sm">
+              <p className="border-border/50 text-muted-foreground rounded-xl border border-dashed p-4 text-center text-sm">
                 {m.persona_no_items()}
               </p>
             ) : null}
@@ -147,78 +164,75 @@ export function PersonaManagerModal({
                 <button
                   key={persona.id}
                   type="button"
-                  className={`w-full rounded-2xl border px-3 py-3 text-left transition ${
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                     isActive
-                      ? 'border-primary bg-primary/10 shadow-sm'
-                      : 'border-border/70 bg-card hover:border-primary/50'
+                      ? 'bg-primary/10 ring-primary/40 shadow-sm ring-1'
+                      : 'hover:bg-muted/60'
                   }`}
                   onClick={() => {
                     setActivePersonaId(persona.id)
                     setRenameValue(persona.name)
                   }}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{persona.name}</p>
-                      <p className="text-muted-foreground text-xs">
-                        {persona.referenceAssetIds.length} {m.persona_images()}
-                      </p>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      className="accent-primary h-4 w-4 shrink-0"
-                      onChange={() => {
-                        onToggleSelectedPersona(persona.id)
-                      }}
-                      onClick={(event) => event.stopPropagation()}
-                    />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">
+                      {persona.name}
+                    </p>
+                    <p className="text-muted-foreground text-xs">
+                      {persona.referenceAssetIds.length} {m.persona_images()}
+                    </p>
                   </div>
+
+                  <button
+                    type="button"
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors ${
+                      selected
+                        ? 'border-primary bg-primary text-primary-foreground'
+                        : 'border-border hover:border-primary/50'
+                    }`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onToggleSelectedPersona(persona.id)
+                    }}
+                  >
+                    {selected && (
+                      <HugeiconsIcon icon={CheckmarkCircle02Icon} size={12} />
+                    )}
+                  </button>
                 </button>
               )
             })}
           </div>
         </section>
 
-        <section className="bg-card ring-border/70 flex min-h-0 flex-col gap-4 rounded-3xl p-4 ring-1">
+        {/* ── Right: active persona detail ── */}
+        <section className="border-border/50 bg-card flex min-h-0 flex-col gap-4 rounded-2xl border p-4">
           {activePersona ? (
             <>
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto_auto]">
+              {/* persona actions bar */}
+              <div className="flex flex-wrap items-center gap-2">
                 <Input
                   value={renameValue}
                   onChange={(event) => setRenameValue(event.target.value)}
                   onKeyDown={(event) => {
-                    if (event.key !== 'Enter' || busy || !renameValue.trim()) {
-                      return
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      void handleRename()
                     }
-
-                    event.preventDefault()
-                    void (async () => {
-                      setBusy(true)
-                      try {
-                        await onRenamePersona(activePersona.id, renameValue)
-                      } finally {
-                        setBusy(false)
-                      }
-                    })()
                   }}
+                  className="min-w-0 flex-1"
                 />
                 <Button
                   variant="outline"
+                  size="sm"
                   disabled={busy || !renameValue.trim()}
-                  onClick={async () => {
-                    setBusy(true)
-                    try {
-                      await onRenamePersona(activePersona.id, renameValue)
-                    } finally {
-                      setBusy(false)
-                    }
-                  }}
+                  onClick={() => void handleRename()}
                 >
                   {m.persona_save()}
                 </Button>
                 <Button
                   variant="destructive"
+                  size="sm"
                   disabled={busy}
                   onClick={async () => {
                     setBusy(true)
@@ -229,42 +243,54 @@ export function PersonaManagerModal({
                     }
                   }}
                 >
+                  <HugeiconsIcon icon={Delete02Icon} size={14} />
                   {m.persona_delete()}
                 </Button>
               </div>
 
+              {/* hint + add images */}
               <div className="text-muted-foreground flex flex-wrap items-center justify-between gap-2 text-xs">
                 <span>{m.persona_limit_hint()}</span>
-                <label className="inline-flex">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => {
-                      const files = Array.from(event.target.files ?? [])
-                      void onAddPersonaImages(activePersona.id, files)
-                      event.target.value = ''
-                    }}
-                  />
-                  <span className="bg-secondary text-secondary-foreground hover:bg-secondary/75 inline-flex h-9 items-center rounded-4xl px-4 text-sm font-medium">
-                    {m.persona_add_images()}
-                  </span>
-                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? [])
+                    void onAddPersonaImages(activePersona.id, files)
+                    event.target.value = ''
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <HugeiconsIcon icon={ImageAdd02Icon} size={14} />
+                  {m.persona_add_images()}
+                </Button>
               </div>
 
-              <div className="min-h-0 flex-1 overflow-auto pr-1">
+              {/* image grid */}
+              <div className="pretty-scroll min-h-0 flex-1 overflow-auto pr-1">
                 {activeAssets.length === 0 ? (
-                  <p className="text-muted-foreground rounded-2xl border border-dashed border-border/70 p-4 text-sm">
-                    {m.persona_no_items()}
-                  </p>
+                  <div className="flex h-full items-center justify-center">
+                    <p className="border-border/50 text-muted-foreground rounded-xl border border-dashed px-6 py-8 text-center text-sm">
+                      {m.persona_no_items()}
+                    </p>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
                     {activeAssets.map((asset) => (
-                      <div key={asset.id} className="group rounded-2xl border border-border/70 p-2">
+                      <div
+                        key={asset.id}
+                        className="group border-border/50 bg-muted/20 relative overflow-hidden rounded-xl border transition-shadow hover:shadow-md"
+                      >
                         <button
                           type="button"
-                          className="aspect-square w-full overflow-hidden rounded-xl"
+                          className="aspect-square w-full overflow-hidden"
                           onClick={() => {
                             onOpenLightbox({
                               title: activePersona.name,
@@ -278,16 +304,19 @@ export function PersonaManagerModal({
                         >
                           <AssetThumb asset={asset} alt={activePersona.name} />
                         </button>
-                        <Button
-                          size="xs"
-                          variant="ghost"
-                          className="mt-2 w-full opacity-80 group-hover:opacity-100"
-                          onClick={() => {
-                            void onRemovePersonaImage(asset.id)
-                          }}
-                        >
-                          {m.persona_remove_image()}
-                        </Button>
+                        <div className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/60 to-transparent p-2 transition-transform group-hover:translate-y-0">
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            className="w-full text-white hover:text-white"
+                            onClick={() => {
+                              void onRemovePersonaImage(asset.id)
+                            }}
+                          >
+                            <HugeiconsIcon icon={Delete02Icon} size={12} />
+                            {m.persona_remove_image()}
+                          </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -295,7 +324,18 @@ export function PersonaManagerModal({
               </div>
             </>
           ) : (
-            <p className="text-muted-foreground text-sm">{m.persona_no_items()}</p>
+            <div className="flex h-full items-center justify-center">
+              <div className="text-center">
+                <HugeiconsIcon
+                  icon={UserMultiple02Icon}
+                  size={32}
+                  className="text-muted-foreground/50 mx-auto mb-2"
+                />
+                <p className="text-muted-foreground text-sm">
+                  {m.persona_no_items()}
+                </p>
+              </div>
+            </div>
           )}
         </section>
       </div>

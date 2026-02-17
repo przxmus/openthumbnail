@@ -12,6 +12,14 @@ import {
 } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { THEME_MODES } from '@/lib/constants/workshop'
 import { useSettings } from '@/lib/hooks/use-settings'
 
@@ -41,27 +49,39 @@ function SettingsPage() {
 
   return (
     <main className="from-background via-background to-muted/25 min-h-screen bg-gradient-to-b">
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8 md:px-8">
-        <section className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-muted-foreground text-xs uppercase tracking-[0.22em]">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-10 md:px-8">
+        {/* Header */}
+        <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-primary text-xs font-semibold tracking-[0.25em] uppercase">
               {m.app_name()}
             </p>
-            <h1 className="text-3xl font-semibold tracking-tight">{m.settings_title()}</h1>
-            <p className="text-muted-foreground mt-1 text-sm">{m.settings_description()}</p>
+            <h1 className="text-4xl font-bold tracking-tight">
+              {m.settings_title()}
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              {m.settings_description()}
+            </p>
           </div>
           <Button variant="outline" onClick={() => navigate({ to: '/' })}>
             {m.settings_back_to_projects()}
           </Button>
         </section>
 
+        <Separator />
+
+        {/* API Key */}
         <Card>
           <CardHeader>
             <CardTitle>{m.settings_openrouter_title()}</CardTitle>
-            <CardDescription>{m.settings_openrouter_description()}</CardDescription>
+            <CardDescription>
+              {m.settings_openrouter_description()}
+            </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
-            <Label htmlFor="openrouter-key">{m.settings_openrouter_label()}</Label>
+            <Label htmlFor="openrouter-key">
+              {m.settings_openrouter_label()}
+            </Label>
             <Input
               id="openrouter-key"
               type="password"
@@ -71,78 +91,91 @@ function SettingsPage() {
                 updateSettings({ openRouterApiKey: event.target.value })
               }}
             />
-            <p className="text-muted-foreground text-xs">{m.settings_openrouter_hint()}</p>
+            <p className="text-muted-foreground text-xs">
+              {m.settings_openrouter_hint()}
+            </p>
           </CardContent>
         </Card>
 
+        {/* UI Preferences */}
         <Card>
           <CardHeader>
             <CardTitle>{m.settings_ui_title()}</CardTitle>
             <CardDescription>{m.settings_ui_description()}</CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4">
+          <CardContent className="grid gap-6">
+            {/* Theme */}
             <div className="grid gap-2">
-              <Label htmlFor="theme-mode">{m.settings_theme_label()}</Label>
-              <div className="relative">
-                <select
-                  id="theme-mode"
-                  value={settings.themeMode}
-                  className="border-input bg-input/30 h-9 w-full appearance-none rounded-4xl border pl-3 pr-11 text-sm"
-                  onChange={(event) => {
+              <Label>{m.settings_theme_label()}</Label>
+              <Select
+                value={settings.themeMode}
+                onValueChange={(value) => {
+                  if (value) {
                     updateSettings({
-                      themeMode: event.target.value as 'light' | 'dark' | 'system',
+                      themeMode: value as 'light' | 'dark' | 'system',
                     })
-                  }}
-                >
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
                   {THEME_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
+                    <SelectItem key={mode} value={mode}>
                       {themeLabel(mode)}
-                    </option>
+                    </SelectItem>
                   ))}
-                </select>
-                <span className="text-muted-foreground pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
-                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
-                    <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
-                  </svg>
-                </span>
-              </div>
+                </SelectContent>
+              </Select>
             </div>
 
+            {/* Language */}
             <div className="grid gap-2">
-              <Label htmlFor="locale">{m.settings_locale_label()}</Label>
-              <div className="relative">
-                <select
-                  id="locale"
-                  value={settings.locale}
-                  className="border-input bg-input/30 h-9 w-full appearance-none rounded-4xl border pl-3 pr-11 text-sm"
-                  onChange={(event) => {
-                    updateSettings({ locale: event.target.value as 'en' | 'pl' })
-                  }}
-                >
-                  <option value="en">{localeLabel('en')}</option>
-                  <option value="pl">{localeLabel('pl')}</option>
-                </select>
-                <span className="text-muted-foreground pointer-events-none absolute right-4 top-1/2 -translate-y-1/2">
-                  <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
-                    <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
-                  </svg>
-                </span>
-              </div>
+              <Label>{m.settings_locale_label()}</Label>
+              <Select
+                value={settings.locale}
+                onValueChange={(value) => {
+                  if (value) {
+                    updateSettings({ locale: value as 'en' | 'pl' })
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">{localeLabel('en')}</SelectItem>
+                  <SelectItem value="pl">{localeLabel('pl')}</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
-            <label className="flex items-center gap-3">
-              <input
-                id="nerd-mode"
-                type="checkbox"
-                checked={settings.nerdMode}
-                onChange={(event) => updateSettings({ nerdMode: event.target.checked })}
-                className="accent-primary h-4 w-4 rounded"
-              />
-              <span>{m.settings_nerd_mode()}</span>
-            </label>
+            {/* Nerd mode */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="space-y-0.5">
+                <Label>{m.settings_nerd_mode()}</Label>
+                <p className="text-muted-foreground text-xs">
+                  Show debug info for generations
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={settings.nerdMode}
+                onClick={() => updateSettings({ nerdMode: !settings.nerdMode })}
+                className={`focus-visible:ring-ring relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none ${settings.nerdMode ? 'bg-primary' : 'bg-input'}`}
+              >
+                <span
+                  className={`bg-background pointer-events-none block h-5 w-5 rounded-full shadow-lg ring-0 transition-transform ${settings.nerdMode ? 'translate-x-5' : 'translate-x-0'}`}
+                />
+              </button>
+            </div>
           </CardContent>
           <CardFooter className="text-muted-foreground text-xs">
-            {m.settings_last_model({ model: settings.lastUsedModel ?? m.common_none() })}
+            {m.settings_last_model({
+              model: settings.lastUsedModel ?? m.common_none(),
+            })}
           </CardFooter>
         </Card>
       </div>

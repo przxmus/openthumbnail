@@ -41,6 +41,14 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Separator } from '@/components/ui/separator'
 import { ASPECT_RATIOS, MAX_OUTPUTS_UI } from '@/lib/constants/workshop'
 import { useWorkshopProject } from '@/lib/hooks/use-workshop-project'
 import {
@@ -72,23 +80,13 @@ function formatDate(value: number) {
 }
 
 function bytesToSize(bytes: number) {
-  if (bytes < 1024) {
-    return `${bytes} B`
-  }
-
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`
-  }
-
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
 }
 
 function getModelCapability(models: Array<ModelCapability>, modelId: string) {
   return models.find((model) => model.id === modelId)
-}
-
-function sliderClassName() {
-  return 'range-input h-2.5 w-full min-w-0'
 }
 
 interface GenerationSource {
@@ -141,6 +139,8 @@ interface StepUndoEntry {
   step: TimelineStep
   assets: Array<OutputAsset>
 }
+
+/* ─── Main component ──────────────────────────────────────────────── */
 
 function ProjectWorkshopPage() {
   const navigate = useNavigate()
@@ -286,9 +286,7 @@ function ProjectWorkshopPage() {
       if (step.type === 'generation-result') {
         const promptStep = promptStepsById.get(step.promptStepId)
         const resolvedInput = promptStep?.input ?? step.inputSnapshot
-        if (!resolvedInput) {
-          continue
-        }
+        if (!resolvedInput) continue
 
         rows.push({
           sourceStepId: step.id,
@@ -300,7 +298,6 @@ function ProjectWorkshopPage() {
         })
       }
     }
-
     return rows
   }, [promptStepsById, steps])
 
@@ -311,7 +308,6 @@ function ProjectWorkshopPage() {
         map.set(output.assetId, generation)
       }
     }
-
     return map
   }, [generationSources])
 
@@ -347,9 +343,7 @@ function ProjectWorkshopPage() {
       if (step.type === 'generation-result') {
         const promptStep = promptStepsById.get(step.promptStepId)
         const resolvedInput = promptStep?.input ?? step.inputSnapshot
-        if (!resolvedInput) {
-          continue
-        }
+        if (!resolvedInput) continue
 
         items.push({
           id: step.id,
@@ -393,14 +387,8 @@ function ProjectWorkshopPage() {
 
     return items.sort((a, b) => {
       const createdAtDiff = a.createdAt - b.createdAt
-      if (createdAtDiff !== 0) {
-        return createdAtDiff
-      }
-
-      if (a.sortGroupId === b.sortGroupId) {
-        return a.sortOrder - b.sortOrder
-      }
-
+      if (createdAtDiff !== 0) return createdAtDiff
+      if (a.sortGroupId === b.sortGroupId) return a.sortOrder - b.sortOrder
       return a.sortGroupId.localeCompare(b.sortGroupId)
     })
   }, [promptStepsById, steps])
@@ -427,47 +415,31 @@ function ProjectWorkshopPage() {
     selectedPersonaNames.length - displayedPersonaNames.length,
   )
   const lightboxGalleryItems = useMemo(() => {
-    if (!lightboxContext) {
-      return []
-    }
-
+    if (!lightboxContext) return []
     return lightboxContext.items
       .map((item) => {
         const asset = assetsMap.get(item.assetId)
-        if (!asset) {
-          return null
-        }
-
-        return {
-          asset,
-          label: item.label,
-        }
+        if (!asset) return null
+        return { asset, label: item.label }
       })
       .filter((item): item is { asset: OutputAsset; label: string } =>
         Boolean(item),
       )
   }, [assetsMap, lightboxContext])
 
+  /* ─── Effects ──────────────────────────────────────────────────── */
+
   useEffect(() => {
-    if (!project) {
-      return
-    }
-
-    if (initializedProjectIdRef.current === project.id) {
-      return
-    }
-
+    if (!project) return
+    if (initializedProjectIdRef.current === project.id) return
     initializedProjectIdRef.current = project.id
-
     setAspectRatio(project.defaultAspectRatio)
     setResolutionPreset(project.defaultResolution)
-
     if (project.defaultModel) {
       setModelId(project.defaultModel)
     } else if (settings.lastUsedModel) {
       setModelId(settings.lastUsedModel)
     }
-
     const draft = loadPromptDraft(project.id)
     setPrompt(draft.prompt)
     setNegativePrompt(draft.negativePrompt)
@@ -475,62 +447,38 @@ function ProjectWorkshopPage() {
   }, [project, settings.lastUsedModel])
 
   useEffect(() => {
-    if (modelId || !models.length) {
-      return
-    }
-
+    if (modelId || !models.length) return
     const available = models.find((entry) => entry.availability === 'available')
-    if (available) {
-      setModelId(available.id)
-    }
+    if (available) setModelId(available.id)
   }, [modelId, models])
 
   useEffect(() => {
-    if (!project) {
-      return
-    }
-
-    savePromptDraft(project.id, {
-      prompt,
-      negativePrompt,
-    })
+    if (!project) return
+    savePromptDraft(project.id, { prompt, negativePrompt })
   }, [negativePrompt, project, prompt])
 
   useEffect(() => {
-    if (!project) {
-      return
-    }
-
+    if (!project) return
     setCollapsedStepIds((current) => {
       const stepIds = new Set(timelineItems.map((step) => step.id))
       const next = current.filter((id) => stepIds.has(id))
       const existing = new Set(next)
-
       for (const step of timelineItems) {
-        if (!existing.has(step.id)) {
-          next.push(step.id)
-        }
+        if (!existing.has(step.id)) next.push(step.id)
       }
-
       if (
         next.length === current.length &&
         next.every((id, index) => id === current[index])
       ) {
         return current
       }
-
       return next
     })
   }, [project, timelineItems])
 
   useEffect(() => {
-    if (!project) {
-      return
-    }
-
-    saveTimelineUiState(project.id, {
-      collapsedStepIds,
-    })
+    if (!project) return
+    saveTimelineUiState(project.id, { collapsedStepIds })
   }, [collapsedStepIds, project])
 
   useEffect(() => {
@@ -556,12 +504,11 @@ function ProjectWorkshopPage() {
   const unavailableModelSelected =
     modelCapability?.availability === 'unavailable'
 
+  /* ─── Handlers ─────────────────────────────────────────────────── */
+
   const onReferenceFiles = async (files: Array<File>) => {
     const imageFiles = files.filter((file) => file.type.startsWith('image/'))
-    if (!imageFiles.length) {
-      return
-    }
-
+    if (!imageFiles.length) return
     await uploadReferenceFiles(imageFiles)
   }
 
@@ -577,20 +524,13 @@ function ProjectWorkshopPage() {
       .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
       .map((item) => item.getAsFile())
       .filter((file): file is File => Boolean(file))
-
-    if (!files.length) {
-      return
-    }
-
+    if (!files.length) return
     event.preventDefault()
     await onReferenceFiles(files)
   }
 
   const onGenerate = async () => {
-    if (!project || !modelId) {
-      return
-    }
-
+    if (!project || !modelId) return
     await generateStep({
       modelId,
       prompt,
@@ -604,7 +544,6 @@ function ProjectWorkshopPage() {
       remixOfAssetId,
       modelCapability,
     })
-
     setRemixOfStepId(undefined)
     setRemixOfAssetId(undefined)
     setRemixSnapshot(null)
@@ -623,10 +562,7 @@ function ProjectWorkshopPage() {
   }
 
   const openLightbox = (context: LightboxContext) => {
-    if (!context.items.length) {
-      return
-    }
-
+    if (!context.items.length) return
     setLightboxContext(context)
   }
 
@@ -642,7 +578,7 @@ function ProjectWorkshopPage() {
     try {
       await navigator.clipboard.writeText(value)
     } catch {
-      // no-op: clipboard may be unavailable in some contexts
+      // no-op
     }
   }
 
@@ -674,7 +610,6 @@ function ProjectWorkshopPage() {
           selectedPersonaIds,
         },
     )
-
     setModelId(generation.input.modelId)
     setPrompt('')
     setNegativePrompt('')
@@ -705,7 +640,6 @@ function ProjectWorkshopPage() {
           selectedPersonaIds,
         },
     )
-
     const generation = generationSourceByAssetId.get(outputAssetId)
     if (generation) {
       setModelId(generation.input.modelId)
@@ -724,7 +658,6 @@ function ProjectWorkshopPage() {
       setRemixOfAssetId(outputAssetId)
       return
     }
-
     setSelectedReferenceIds((current) =>
       current.includes(outputAssetId) ? current : [outputAssetId, ...current],
     )
@@ -741,50 +674,32 @@ function ProjectWorkshopPage() {
   const buildUndoEntry = useCallback(
     (sourceStepId: string): StepUndoEntry | null => {
       const step = stepById.get(sourceStepId)
-      if (!step) {
-        return null
-      }
-
+      if (!step) return null
       const assets: Array<OutputAsset> = []
       if (step.type === 'generation' || step.type === 'generation-result') {
         for (const output of step.outputs) {
           const asset = assetsMap.get(output.assetId)
-          if (asset?.scope === 'project') {
-            assets.push(asset)
-          }
+          if (asset?.scope === 'project') assets.push(asset)
         }
       } else if (step.type === 'edit') {
         const asset = assetsMap.get(step.outputAssetId)
-        if (asset?.scope === 'project') {
-          assets.push(asset)
-        }
+        if (asset?.scope === 'project') assets.push(asset)
       }
-
       return { step, assets }
     },
     [assetsMap, stepById],
   )
 
   const onRequestDeleteTimelineStep = (sourceStepId: string, label: string) => {
-    setTimelineStepPendingDelete({
-      id: sourceStepId,
-      label,
-    })
+    setTimelineStepPendingDelete({ id: sourceStepId, label })
   }
 
   const onConfirmDeleteTimelineStep = async () => {
-    if (!timelineStepPendingDelete) {
-      return
-    }
-
+    if (!timelineStepPendingDelete) return
     const pending = timelineStepPendingDelete
     setTimelineStepPendingDelete(null)
-
     const snapshot = buildUndoEntry(pending.id)
-    if (!snapshot) {
-      return
-    }
-
+    if (!snapshot) return
     setHistoryBusy(true)
     try {
       await removeTimelineStep(pending.id)
@@ -796,24 +711,14 @@ function ProjectWorkshopPage() {
   }
 
   const onUndo = useCallback(async () => {
-    if (historyBusy) {
-      return
-    }
-
+    if (historyBusy) return
     let entry: StepUndoEntry | null = null
     setUndoStack((current) => {
-      if (!current.length) {
-        return current
-      }
-
+      if (!current.length) return current
       entry = current[current.length - 1]
       return current.slice(0, -1)
     })
-
-    if (!entry) {
-      return
-    }
-
+    if (!entry) return
     setHistoryBusy(true)
     try {
       await restoreTimelineStep(entry)
@@ -824,27 +729,17 @@ function ProjectWorkshopPage() {
   }, [historyBusy, restoreTimelineStep])
 
   const onRedo = useCallback(async () => {
-    if (historyBusy) {
-      return
-    }
-
+    if (historyBusy) return
     let entry: StepUndoEntry | null = null
     setRedoStack((current) => {
-      if (!current.length) {
-        return current
-      }
-
+      if (!current.length) return current
       entry = current[current.length - 1]
       return current.slice(0, -1)
     })
-
-    if (!entry) {
-      return
-    }
-
+    if (!entry) return
     setHistoryBusy(true)
     try {
-      await removeTimelineStep(entry.step.id)
+      await removeTimelineStep((entry as StepUndoEntry).step.id)
       setUndoStack((current) => [...current, entry as StepUndoEntry])
     } finally {
       setHistoryBusy(false)
@@ -863,50 +758,47 @@ function ProjectWorkshopPage() {
         (target.tagName === 'INPUT' ||
           target.tagName === 'TEXTAREA' ||
           target.isContentEditable)
-      ) {
+      )
         return
-      }
 
       const isMetaOrCtrl = event.metaKey || event.ctrlKey
-      if (!isMetaOrCtrl) {
-        return
-      }
+      if (!isMetaOrCtrl) return
 
       const key = event.key.toLowerCase()
       if (key === 'z') {
         event.preventDefault()
-        if (event.shiftKey) {
-          void onRedo()
-        } else {
-          void onUndo()
-        }
+        if (event.shiftKey) void onRedo()
+        else void onUndo()
         return
       }
-
       if (key === 'y') {
         event.preventDefault()
         void onRedo()
       }
     }
-
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onRedo, onUndo])
 
+  /* ─── Loading / Not found ──────────────────────────────────────── */
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center">
-        <p suppressHydrationWarning className="text-muted-foreground text-sm">
-          {hasHydrated ? m.loading_workshop() : 'Loading workshop...'}
-        </p>
+        <div className="flex flex-col items-center gap-3">
+          <div className="bg-primary/20 h-8 w-8 animate-pulse rounded-full" />
+          <p suppressHydrationWarning className="text-muted-foreground text-sm">
+            {hasHydrated ? m.loading_workshop() : 'Loading workshop...'}
+          </p>
+        </div>
       </main>
     )
   }
 
   if (!project) {
     return (
-      <main className="flex min-h-screen items-center justify-center">
-        <Card>
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <Card className="max-w-md">
           <CardHeader>
             <CardTitle>{m.project_not_found_title()}</CardTitle>
             <CardDescription>
@@ -923,56 +815,61 @@ function ProjectWorkshopPage() {
     )
   }
 
+  /* ─── Main layout ──────────────────────────────────────────────── */
+
   return (
     <main
-      className="from-background via-background to-muted/25 min-h-screen bg-gradient-to-br"
-      onPaste={(event) => {
-        void onPasteReferences(event)
-      }}
+      className="from-background via-background to-muted/20 min-h-screen bg-gradient-to-br"
+      onPaste={(event) => void onPasteReferences(event)}
     >
-      <div className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-3 md:px-8">
-        <div className="bg-card mb-3 grid gap-2 rounded-2xl border p-2.5 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-          <div className="grid min-w-0 gap-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="text-muted-foreground text-[11px] tracking-[0.12em] uppercase">
-                {m.project_label()}
-              </span>
-              <span className="text-muted-foreground text-xs">
-                {m.project_updated({ date: formatDate(project.updatedAt) })}
-              </span>
-            </div>
+      {/* ─── Top bar ─────────────────────────────────────────────── */}
+      <header className="bg-card/80 sticky top-0 z-30 border-b backdrop-blur-lg">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-2 md:px-8">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigate({ to: '/' })}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              className="mr-1.5 h-3.5 w-3.5 fill-current"
+              aria-hidden="true"
+            >
+              <path d="M7.78 12.53a.75.75 0 0 1-1.06 0L3.47 9.28a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 1.06L5.56 8.25h6.69a.75.75 0 0 1 0 1.5H5.56l2.22 2.22a.75.75 0 0 1 0 1.06Z" />
+            </svg>
+            {m.projects_title()}
+          </Button>
+
+          <Separator orientation="vertical" className="!h-5" />
+
+          <div className="min-w-0 flex-1">
             <Input
-              id="project-name"
               value={project.name}
-              className="h-8"
+              className="focus:border-border border-transparent bg-transparent text-sm font-medium"
               onChange={async (event) => {
                 await updateProjectDefaults({ name: event.target.value })
               }}
             />
-            <input
-              ref={backupInputRef}
-              type="file"
-              accept=".zip"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (!file) {
-                  return
-                }
-
-                void importBackup(file)
-                event.target.value = ''
-              }}
-            />
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button
-              size="xs"
-              variant="outline"
-              onClick={() => navigate({ to: '/' })}
-            >
-              {m.projects_title()}
-            </Button>
+
+          <span className="text-muted-foreground hidden text-xs md:block">
+            {m.project_updated({ date: formatDate(project.updatedAt) })}
+          </span>
+
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept=".zip"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0]
+              if (!file) return
+              void importBackup(file)
+              event.target.value = ''
+            }}
+          />
+
+          <div className="flex items-center gap-1.5">
             <Button
               size="xs"
               variant="outline"
@@ -990,150 +887,140 @@ function ProjectWorkshopPage() {
             <Button
               size="xs"
               variant="destructive"
-              onClick={() => {
-                setProjectIdPendingDelete(project.id)
-              }}
+              onClick={() => setProjectIdPendingDelete(project.id)}
             >
               {m.project_delete()}
             </Button>
           </div>
         </div>
+      </header>
 
-        <div className="grid items-start gap-4 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
-          <aside className="space-y-2 xl:sticky xl:top-2">
+      {/* ─── Content ─────────────────────────────────────────────── */}
+      <div className="mx-auto w-full max-w-[1600px] min-w-0 px-4 py-4 md:px-8">
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(280px,360px)_minmax(0,1fr)]">
+          {/* ── Left sidebar ───────────────────────────────────────── */}
+          <aside className="space-y-3 xl:sticky xl:top-16">
+            {/* Generation card */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>{m.generation_title()}</CardTitle>
-                <CardDescription>{m.generation_description()}</CardDescription>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  {m.generation_title()}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {m.generation_description()}
+                </CardDescription>
               </CardHeader>
-              <CardContent className="grid min-w-0 gap-2.5 overflow-hidden pt-0">
-                <Label htmlFor="model">{m.generation_model_label()}</Label>
-                <div className="relative">
-                  <select
-                    id="model"
+              <CardContent className="grid min-w-0 gap-3 overflow-hidden pt-0">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="model" className="text-xs">
+                    {m.generation_model_label()}
+                  </Label>
+                  <Select
                     value={modelId}
-                    className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pr-11 pl-3 text-sm"
-                    onChange={(event) => setModelId(event.target.value)}
+                    onValueChange={(val) => {
+                      if (val !== null) setModelId(val)
+                    }}
                   >
-                    <option value="">{m.generation_model_placeholder()}</option>
-                    {models.map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
-                        {model.availability === 'unavailable'
-                          ? ` ${m.generation_model_unavailable_suffix()}`
-                          : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-4 -translate-y-1/2">
-                    <svg
-                      viewBox="0 0 16 16"
-                      aria-hidden="true"
-                      className="h-3.5 w-3.5 fill-current"
-                    >
-                      <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
-                    </svg>
-                  </span>
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={m.generation_model_placeholder()}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                          {model.availability === 'unavailable'
+                            ? ` ${m.generation_model_unavailable_suffix()}`
+                            : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {unavailableModelSelected ? (
-                  <p className="text-destructive text-xs">
+                  <p className="text-destructive text-xs font-medium">
                     {m.generation_model_unavailable()}
                   </p>
                 ) : null}
 
-                <div className="grid min-w-0 gap-2 sm:grid-cols-2">
-                  <div className="grid min-w-0 gap-1">
-                    <Label htmlFor="ratio">{m.generation_ratio_label()}</Label>
-                    <div className="relative">
-                      <select
-                        id="ratio"
-                        value={aspectRatio}
-                        className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pr-11 pl-3 text-sm"
-                        onChange={(event) => {
-                          setAspectRatio(
-                            event.target.value as typeof aspectRatio,
-                          )
-                        }}
-                      >
+                <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">
+                      {m.generation_ratio_label()}
+                    </Label>
+                    <Select
+                      value={aspectRatio}
+                      onValueChange={(val) => {
+                        if (val !== null)
+                          setAspectRatio(val as typeof aspectRatio)
+                      }}
+                    >
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
                         {ASPECT_RATIOS.map((ratio) => (
-                          <option key={ratio} value={ratio}>
+                          <SelectItem key={ratio} value={ratio}>
                             {ratio}
-                          </option>
+                          </SelectItem>
                         ))}
-                      </select>
-                      <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-4 -translate-y-1/2">
-                        <svg
-                          viewBox="0 0 16 16"
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5 fill-current"
-                        >
-                          <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
-                        </svg>
-                      </span>
-                    </div>
+                      </SelectContent>
+                    </Select>
                   </div>
-                  <div className="grid min-w-0 gap-1">
-                    <Label htmlFor="resolution">
+                  <div className="grid gap-1.5">
+                    <Label className="text-xs">
                       {m.generation_resolution_label()}
                     </Label>
-                    <div className="relative">
-                      <select
-                        id="resolution"
-                        value={resolutionPreset}
-                        className="border-input bg-input/30 h-9 w-full min-w-0 appearance-none rounded-4xl border pr-11 pl-3 text-sm"
-                        onChange={(event) => {
-                          setResolutionPreset(
-                            event.target.value as typeof resolutionPreset,
-                          )
-                        }}
-                      >
-                        <option value="720p">720p</option>
-                        <option value="1080p">1080p</option>
-                      </select>
-                      <span className="text-muted-foreground pointer-events-none absolute top-1/2 right-4 -translate-y-1/2">
-                        <svg
-                          viewBox="0 0 16 16"
-                          aria-hidden="true"
-                          className="h-3.5 w-3.5 fill-current"
-                        >
-                          <path d="M4.22 6.47a.75.75 0 0 1 1.06 0L8 9.19l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 0-1.06Z" />
-                        </svg>
-                      </span>
-                    </div>
+                    <Select
+                      value={resolutionPreset}
+                      onValueChange={(val) => {
+                        if (val !== null)
+                          setResolutionPreset(val as typeof resolutionPreset)
+                      }}
+                    >
+                      <SelectTrigger size="sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="720p">720p</SelectItem>
+                        <SelectItem value="1080p">1080p</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
-                <div className="grid min-w-0 gap-1 pt-1">
-                  <Label htmlFor="count">
-                    {m.generation_outputs_label({ count: String(outputCount) })}
+                <div className="grid gap-1.5">
+                  <Label className="text-xs">
+                    {m.generation_outputs_label({
+                      count: String(outputCount),
+                    })}
                   </Label>
                   <input
-                    id="count"
                     type="range"
                     min={1}
                     max={maxOutputs}
                     value={outputCount}
-                    className={sliderClassName()}
-                    onChange={(event) => {
+                    className="range-input h-2.5 w-full min-w-0"
+                    onChange={(event) =>
                       setOutputCount(Number(event.target.value))
-                    }}
+                    }
                   />
-                  <p className="text-muted-foreground text-xs">
+                  <p className="text-muted-foreground text-[11px]">
                     {m.generation_outputs_experimental()}
                   </p>
                 </div>
 
                 <Button
+                  className="w-full"
                   disabled={
                     busy ||
                     !modelId ||
                     unavailableModelSelected ||
                     !prompt.trim()
                   }
-                  onClick={() => {
-                    void onGenerate()
-                  }}
+                  onClick={() => void onGenerate()}
                 >
                   {busy
                     ? m.generation_button_busy()
@@ -1143,17 +1030,14 @@ function ProjectWorkshopPage() {
                 </Button>
 
                 {remixOfStepId ? (
-                  <div className="bg-muted/60 text-muted-foreground rounded-xl p-2 text-xs">
+                  <div className="bg-primary/5 border-primary/20 rounded-xl border p-2.5 text-xs">
                     <div className="flex items-start gap-2">
                       {remixPreviewAsset ? (
                         <button
                           type="button"
                           className="border-border/70 h-14 w-20 shrink-0 overflow-hidden rounded-lg border"
                           onClick={() => {
-                            if (!remixOfAssetId) {
-                              return
-                            }
-
+                            if (!remixOfAssetId) return
                             openLightbox({
                               title: m.generation_title(),
                               initialAssetId: remixOfAssetId,
@@ -1173,11 +1057,13 @@ function ProjectWorkshopPage() {
                         </button>
                       ) : null}
                       <div className="min-w-0">
-                        <p>
-                          {m.generation_remix_active({ stepId: remixOfStepId })}
+                        <p className="text-foreground font-medium">
+                          {m.generation_remix_active({
+                            stepId: remixOfStepId,
+                          })}
                         </p>
                         {remixOfAssetId ? (
-                          <p className="text-muted-foreground/90">
+                          <p className="text-muted-foreground">
                             {m.generation_remix_asset_selected()}
                           </p>
                         ) : null}
@@ -1185,7 +1071,7 @@ function ProjectWorkshopPage() {
                     </div>
                     <button
                       type="button"
-                      className="text-foreground mt-2 underline"
+                      className="text-primary mt-2 text-xs underline"
                       onClick={() => {
                         setRemixOfStepId(undefined)
                         setRemixOfAssetId(undefined)
@@ -1213,43 +1099,49 @@ function ProjectWorkshopPage() {
               </CardContent>
             </Card>
 
+            {/* References card */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>{m.references_title()}</CardTitle>
-                <CardDescription>{m.references_description()}</CardDescription>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  {m.references_title()}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {m.references_description()}
+                </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-2.5 pt-0">
+              <CardContent className="grid gap-3 pt-0">
                 <div
-                  className="border-border/70 hover:border-primary/60 bg-muted/20 rounded-2xl border border-dashed p-4"
-                  onDragOver={(event) => {
-                    event.preventDefault()
-                  }}
-                  onDrop={(event) => {
-                    void onDropReferences(event)
-                  }}
+                  className="border-border/50 hover:border-primary/40 bg-muted/10 group/drop cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-colors"
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => void onDropReferences(event)}
+                  onClick={() => referenceInputRef.current?.click()}
                 >
-                  <p className="text-sm">{m.references_drop_hint()}</p>
-                  <div className="mt-2 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => referenceInputRef.current?.click()}
-                    >
-                      {m.references_select_files()}
-                    </Button>
-                    <input
-                      ref={referenceInputRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={(event) => {
-                        const files = Array.from(event.target.files ?? [])
-                        void onReferenceFiles(files)
-                        event.target.value = ''
-                      }}
-                    />
+                  <div className="text-muted-foreground text-sm">
+                    {m.references_drop_hint()}
                   </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      referenceInputRef.current?.click()
+                    }}
+                  >
+                    {m.references_select_files()}
+                  </Button>
+                  <input
+                    ref={referenceInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files ?? [])
+                      void onReferenceFiles(files)
+                      event.target.value = ''
+                    }}
+                  />
                 </div>
 
                 <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -1258,10 +1150,7 @@ function ProjectWorkshopPage() {
                     value={youtubeUrl}
                     onChange={(event) => setYoutubeUrl(event.target.value)}
                     onKeyDown={(event) => {
-                      if (event.key !== 'Enter' || !youtubeUrl.trim()) {
-                        return
-                      }
-
+                      if (event.key !== 'Enter' || !youtubeUrl.trim()) return
                       event.preventDefault()
                       void onImportYoutube()
                     }}
@@ -1276,29 +1165,28 @@ function ProjectWorkshopPage() {
                 </div>
 
                 {supportsReferences ? null : (
-                  <p className="text-muted-foreground text-xs">
+                  <p className="text-muted-foreground bg-muted/40 rounded-lg p-2 text-xs">
                     {m.references_model_unsupported()}
                   </p>
                 )}
 
-                <div className="pretty-scroll max-h-56 min-w-0 space-y-2 overflow-auto pr-1">
+                <div className="pretty-scroll max-h-56 min-w-0 space-y-1.5 overflow-auto pr-1">
                   {referenceAssets.length === 0 ? (
-                    <p className="text-muted-foreground border-border/70 rounded-xl border border-dashed p-3 text-sm">
+                    <p className="text-muted-foreground border-border/50 rounded-xl border border-dashed p-3 text-center text-sm">
                       {m.references_empty()}
                     </p>
                   ) : null}
 
                   {referenceAssets.map((asset) => {
                     const selected = selectedReferenceIds.includes(asset.id)
-
                     return (
                       <button
                         key={asset.id}
                         type="button"
-                        className={`grid w-full min-w-0 grid-cols-[84px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border p-2 text-left ${
+                        className={`grid w-full min-w-0 grid-cols-[72px_minmax(0,1fr)_auto] items-center gap-2.5 rounded-xl border p-1.5 text-left transition-all ${
                           selected
-                            ? 'border-primary bg-primary/10'
-                            : 'border-border/70 bg-card hover:border-primary/50'
+                            ? 'border-primary/60 bg-primary/5 ring-primary/20 ring-1'
+                            : 'border-border/50 bg-card hover:border-primary/30'
                         }`}
                         onClick={() => {
                           setSelectedReferenceIds((current) =>
@@ -1310,7 +1198,7 @@ function ProjectWorkshopPage() {
                       >
                         <button
                           type="button"
-                          className="h-16 w-20 overflow-hidden rounded-xl"
+                          className="h-14 w-[72px] overflow-hidden rounded-lg"
                           onClick={(event) => {
                             event.stopPropagation()
                             openLightbox({
@@ -1331,15 +1219,13 @@ function ProjectWorkshopPage() {
                         <div className="min-w-0 text-xs">
                           <p className="truncate font-medium">{asset.kind}</p>
                           <p className="text-muted-foreground truncate">
-                            {formatDate(asset.createdAt)}
-                          </p>
-                          <p className="text-muted-foreground truncate">
                             {asset.width}x{asset.height}
                           </p>
                         </div>
                         <Button
                           size="xs"
                           variant="ghost"
+                          className="text-muted-foreground hover:text-destructive"
                           onClick={(event) => {
                             event.stopPropagation()
                             setSelectedReferenceIds((current) =>
@@ -1355,15 +1241,18 @@ function ProjectWorkshopPage() {
                   })}
                 </div>
 
-                <div className="border-border/70 flex flex-wrap items-center justify-between gap-2 rounded-2xl border p-2.5">
+                <Separator />
+
+                {/* Personas section */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="font-medium">{m.personas_title()}</p>
+                    <p className="text-sm font-medium">{m.personas_title()}</p>
                     <p className="text-muted-foreground text-xs">
                       {m.personas_selected({
                         count: String(selectedPersonaIds.length),
                       })}
                     </p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                    <div className="mt-1.5 flex flex-wrap gap-1">
                       {selectedPersonaNames.length === 0 ? (
                         <Badge variant="outline">{m.common_none()}</Badge>
                       ) : (
@@ -1393,14 +1282,18 @@ function ProjectWorkshopPage() {
               </CardContent>
             </Card>
 
+            {/* Exports card */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle>{m.exports_title()}</CardTitle>
-                <CardDescription>{m.exports_description()}</CardDescription>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{m.exports_title()}</CardTitle>
+                <CardDescription className="text-xs">
+                  {m.exports_description()}
+                </CardDescription>
               </CardHeader>
-              <CardContent className="grid gap-2 pt-0">
+              <CardContent className="pt-0">
                 <Button
                   variant="outline"
+                  className="w-full"
                   onClick={() => void exportProjectBatch()}
                 >
                   {m.exports_batch({ count: String(outputAssets.length) })}
@@ -1408,13 +1301,16 @@ function ProjectWorkshopPage() {
               </CardContent>
             </Card>
 
+            {/* Quota warning */}
             {quotaState ? (
-              <Card className="border-destructive/50">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-destructive">
+              <Card className="border-destructive/40">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-destructive text-base">
                     {m.quota_title()}
                   </CardTitle>
-                  <CardDescription>{quotaState.reason}</CardDescription>
+                  <CardDescription className="text-xs">
+                    {quotaState.reason}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-2 pt-0">
                   <Button
@@ -1428,11 +1324,11 @@ function ProjectWorkshopPage() {
                   </Button>
 
                   {cleanupStateVisible ? (
-                    <div className="pretty-scroll max-h-44 space-y-2 overflow-auto pr-1">
+                    <div className="pretty-scroll max-h-44 space-y-1.5 overflow-auto pr-1">
                       {cleanupRows.map((row) => (
                         <div
                           key={row.project.id}
-                          className="bg-muted/40 flex items-center justify-between rounded-xl px-3 py-2"
+                          className="bg-muted/30 flex items-center justify-between rounded-lg px-3 py-2"
                         >
                           <div>
                             <p className="text-sm font-medium">
@@ -1447,9 +1343,9 @@ function ProjectWorkshopPage() {
                           <Button
                             size="xs"
                             variant="destructive"
-                            onClick={() => {
+                            onClick={() =>
                               setProjectIdPendingDelete(row.project.id)
-                            }}
+                            }
                           >
                             {m.projects_delete()}
                           </Button>
@@ -1461,36 +1357,43 @@ function ProjectWorkshopPage() {
               </Card>
             ) : null}
 
+            {/* Error card */}
             {error ? (
-              <Card className="border-destructive/40">
-                <CardContent className="text-destructive pt-6 text-sm">
+              <Card className="border-destructive/30">
+                <CardContent className="text-destructive pt-5 text-sm">
                   {error}
                 </CardContent>
               </Card>
             ) : null}
           </aside>
 
-          <section className="min-w-0">
-            <Card className="mb-3">
-              <CardHeader className="pb-3">
-                <CardTitle>{m.generation_prompt_label()}</CardTitle>
+          {/* ── Right main area ────────────────────────────────────── */}
+          <section className="min-w-0 space-y-4">
+            {/* Prompt area */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">
+                  {m.generation_prompt_label()}
+                </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-2.5 pt-0">
+              <CardContent className="grid gap-3 pt-0">
                 <Textarea
                   id="prompt"
                   value={prompt}
                   placeholder={m.generation_prompt_placeholder()}
+                  className="min-h-[100px] resize-y"
                   onChange={(event) => setPrompt(event.target.value)}
                 />
                 {supportsNegativePrompt ? (
                   <>
-                    <Label htmlFor="negative-prompt">
+                    <Label htmlFor="negative-prompt" className="text-xs">
                       {m.generation_negative_label()}
                     </Label>
                     <Textarea
                       id="negative-prompt"
                       value={negativePrompt}
                       placeholder={m.generation_negative_placeholder()}
+                      className="min-h-[60px] resize-y"
                       onChange={(event) =>
                         setNegativePrompt(event.target.value)
                       }
@@ -1500,23 +1403,22 @@ function ProjectWorkshopPage() {
               </CardContent>
             </Card>
 
-            <Card className="min-h-[70vh]">
+            {/* Timeline */}
+            <Card className="min-h-[60vh]">
               <CardHeader>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <CardTitle>{m.timeline_title()}</CardTitle>
-                    <CardDescription>
+                    <CardDescription className="text-xs">
                       {m.timeline_description()}
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <Button
                       size="xs"
                       variant="outline"
                       disabled={historyBusy || undoStack.length === 0}
-                      onClick={() => {
-                        void onUndo()
-                      }}
+                      onClick={() => void onUndo()}
                     >
                       {m.timeline_action_undo()}
                     </Button>
@@ -1524,9 +1426,7 @@ function ProjectWorkshopPage() {
                       size="xs"
                       variant="outline"
                       disabled={historyBusy || redoStack.length === 0}
-                      onClick={() => {
-                        void onRedo()
-                      }}
+                      onClick={() => void onRedo()}
                     >
                       {m.timeline_action_redo()}
                     </Button>
@@ -1535,636 +1435,97 @@ function ProjectWorkshopPage() {
               </CardHeader>
               <CardContent>
                 {timelineItems.length === 0 ? (
-                  <div className="bg-muted/30 text-muted-foreground rounded-2xl p-6 text-sm">
-                    {m.timeline_empty()}
+                  <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed py-16 text-sm">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-8 w-8 opacity-30"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth={1.5}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+                      />
+                    </svg>
+                    <p>{m.timeline_empty()}</p>
                   </div>
                 ) : (
-                  <ol className="relative space-y-4 border-l border-dashed pl-5">
+                  <ol className="border-primary/20 relative space-y-3 border-l-2 pl-5">
                     {timelineItems.map((item) => {
                       const collapsed = collapsedStepIds.includes(item.id)
 
                       return (
                         <li key={item.id} className="relative">
-                          <span className="bg-primary absolute top-3 -left-[1.72rem] h-3 w-3 rounded-full" />
+                          <span className="bg-primary ring-background absolute top-3.5 -left-[1.82rem] h-3 w-3 rounded-full ring-2" />
 
                           {item.type === 'prompt' ? (
-                            <Card size="sm" className="gap-4">
-                              <CardHeader>
-                                <div className="flex items-center justify-between gap-2">
-                                  <CardTitle className="text-base">
-                                    {m.timeline_prompt()}
-                                  </CardTitle>
-                                  <div className="flex items-center gap-2">
-                                    <Badge>{formatDate(item.createdAt)}</Badge>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => {
-                                        onRequestDeleteTimelineStep(
-                                          item.sourceStepId,
-                                          m.timeline_prompt(),
-                                        )
-                                      }}
-                                    >
-                                      {m.timeline_action_delete()}
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        toggleStepCollapsed(item.id)
-                                      }
-                                    >
-                                      {collapsed
-                                        ? m.timeline_expand()
-                                        : m.timeline_collapse()}
-                                    </Button>
-                                  </div>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  <Button
-                                    size="xs"
-                                    variant="outline"
-                                    onClick={() => onReusePrompt(item.input)}
-                                  >
-                                    {m.timeline_action_reuse_prompt()}
-                                  </Button>
-                                </div>
-                              </CardHeader>
-                              <CardContent className="min-w-0 space-y-3 overflow-hidden">
-                                {collapsed ? (
-                                  <p className="text-muted-foreground truncate text-sm">
-                                    {item.input.prompt}
-                                  </p>
-                                ) : (
-                                  <>
-                                    <div className="rounded-xl bg-zinc-900/90 p-3 text-xs text-zinc-100">
-                                      <div className="flex items-center justify-between gap-2">
-                                        <p className="text-zinc-400">
-                                          {m.timeline_prompt()}
-                                        </p>
-                                        <Button
-                                          size="xs"
-                                          variant="outline"
-                                          className="border-zinc-500/60 bg-transparent text-zinc-100 hover:bg-zinc-700/70 hover:text-zinc-100"
-                                          onClick={() => {
-                                            void onCopyText(item.input.prompt)
-                                          }}
-                                        >
-                                          {m.timeline_action_copy_prompt()}
-                                        </Button>
-                                      </div>
-                                      <p className="mt-1 whitespace-pre-wrap">
-                                        {item.input.prompt}
-                                      </p>
-                                    </div>
-
-                                    {item.input.negativePrompt ? (
-                                      <div className="rounded-xl bg-zinc-100 p-3 text-xs text-zinc-900 ring-1 ring-zinc-200">
-                                        <div className="flex items-center justify-between gap-2">
-                                          <p className="text-zinc-500">
-                                            {m.timeline_negative_prompt()}
-                                          </p>
-                                          <Button
-                                            size="xs"
-                                            variant="outline"
-                                            className="border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-zinc-200 dark:hover:text-zinc-900"
-                                            onClick={() => {
-                                              void onCopyText(
-                                                item.input.negativePrompt ?? '',
-                                              )
-                                            }}
-                                          >
-                                            {m.timeline_action_copy_negative_prompt()}
-                                          </Button>
-                                        </div>
-                                        <p className="mt-1 whitespace-pre-wrap">
-                                          {item.input.negativePrompt}
-                                        </p>
-                                      </div>
-                                    ) : null}
-
-                                    <CardDescription>
-                                      {m.timeline_model_line({
-                                        model: item.input.modelId,
-                                        resolution: item.input.resolutionPreset,
-                                        ratio: item.input.aspectRatio,
-                                      })}
-                                    </CardDescription>
-
-                                    <div className="flex min-w-0 flex-wrap gap-2">
-                                      <span className="text-muted-foreground text-xs">
-                                        {m.timeline_references_label()}:
-                                      </span>
-                                      {item.input.referenceAssetIds.length ===
-                                      0 ? (
-                                        <Badge variant="outline">
-                                          {m.timeline_references_none()}
-                                        </Badge>
-                                      ) : (
-                                        item.input.referenceAssetIds.map(
-                                          (assetId) => {
-                                            const missingReferences =
-                                              missingReferenceIdsByStep.get(
-                                                item.id,
-                                              )
-                                            const isDeleted = missingReferences
-                                              ? missingReferences.includes(
-                                                  assetId,
-                                                )
-                                              : !assetsMap.has(assetId)
-                                            return (
-                                              <Badge
-                                                key={assetId}
-                                                variant={
-                                                  isDeleted
-                                                    ? 'destructive'
-                                                    : 'outline'
-                                                }
-                                              >
-                                                {isDeleted
-                                                  ? m.references_deleted_badge()
-                                                  : assetId.slice(0, 8)}
-                                              </Badge>
-                                            )
-                                          },
-                                        )
-                                      )}
-                                    </div>
-                                  </>
-                                )}
-                              </CardContent>
-                            </Card>
+                            <PromptTimelineCard
+                              item={item}
+                              collapsed={collapsed}
+                              assetsMap={assetsMap}
+                              missingReferenceIdsByStep={
+                                missingReferenceIdsByStep
+                              }
+                              onToggleCollapsed={() =>
+                                toggleStepCollapsed(item.id)
+                              }
+                              onDelete={() =>
+                                onRequestDeleteTimelineStep(
+                                  item.sourceStepId,
+                                  m.timeline_prompt(),
+                                )
+                              }
+                              onReusePrompt={() => onReusePrompt(item.input)}
+                              onCopyText={onCopyText}
+                            />
                           ) : item.type === 'generation' ? (
-                            <Card size="sm" className="gap-4">
-                              <CardHeader>
-                                <div className="flex items-center justify-between gap-2">
-                                  <div className="flex items-center gap-2">
-                                    <CardTitle className="text-base">
-                                      {m.timeline_generation_step()}
-                                    </CardTitle>
-                                    {item.trace?.fallbackUsed ? (
-                                      <Badge variant="outline">
-                                        {m.timeline_fallback_badge()}
-                                      </Badge>
-                                    ) : null}
-                                    {item.status === 'pending' ? (
-                                      <Badge variant="outline">
-                                        {m.generation_button_busy()}
-                                      </Badge>
-                                    ) : null}
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <Badge>{formatDate(item.createdAt)}</Badge>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => {
-                                        onRequestDeleteTimelineStep(
-                                          item.sourceStepId,
-                                          m.timeline_generation_step(),
-                                        )
-                                      }}
-                                    >
-                                      {m.timeline_action_delete()}
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        toggleStepCollapsed(item.id)
-                                      }
-                                    >
-                                      {collapsed
-                                        ? m.timeline_expand()
-                                        : m.timeline_collapse()}
-                                    </Button>
-                                  </div>
-                                </div>
-                                {!collapsed ? (
-                                  <CardDescription>
-                                    {m.timeline_model_line({
-                                      model: item.input.modelId,
-                                      resolution: item.input.resolutionPreset,
-                                      ratio: item.input.aspectRatio,
-                                    })}
-                                  </CardDescription>
-                                ) : null}
-                              </CardHeader>
-                              <CardContent className="min-w-0 space-y-3 overflow-hidden">
-                                {item.status === 'pending' ? (
-                                  <div
-                                    className={`grid gap-3 ${
-                                      item.input.outputCount <= 1
-                                        ? 'grid-cols-1'
-                                        : item.input.outputCount === 2
-                                          ? 'md:grid-cols-2'
-                                          : 'md:grid-cols-2 xl:grid-cols-3'
-                                    }`}
-                                  >
-                                    {Array.from({
-                                      length: Math.max(
-                                        1,
-                                        item.input.outputCount,
-                                      ),
-                                    }).map((_, index) => (
-                                      <div
-                                        key={`${item.id}:skeleton:${index}`}
-                                        className="border-border/60 overflow-hidden rounded-2xl border p-2"
-                                      >
-                                        <div className="bg-muted h-44 animate-pulse rounded-xl" />
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div
-                                    className={`grid gap-3 ${
-                                      item.outputs.length <= 1
-                                        ? 'grid-cols-1'
-                                        : item.outputs.length === 2
-                                          ? 'md:grid-cols-2'
-                                          : 'md:grid-cols-2 xl:grid-cols-3'
-                                    }`}
-                                  >
-                                    {item.outputs.map((output, outputIndex) => {
-                                      const asset = assetsMap.get(
-                                        output.assetId,
-                                      )
-                                      if (!asset) {
-                                        return null
-                                      }
-
-                                      return (
-                                        <div
-                                          key={output.assetId}
-                                          className="group border-border/60 overflow-hidden rounded-2xl border"
-                                        >
-                                          <div
-                                            role="button"
-                                            tabIndex={0}
-                                            className="bg-muted/20 relative w-full cursor-zoom-in overflow-hidden"
-                                            style={{
-                                              aspectRatio: `${asset.width} / ${asset.height}`,
-                                            }}
-                                            onClick={() => {
-                                              openLightbox({
-                                                title:
-                                                  m.timeline_generation_step(),
-                                                initialAssetId: output.assetId,
-                                                items: item.outputs.map(
-                                                  (entry, index) => ({
-                                                    assetId: entry.assetId,
-                                                    label: `${m.timeline_output()} ${index + 1}`,
-                                                  }),
-                                                ),
-                                              })
-                                            }}
-                                            onKeyDown={(event) => {
-                                              if (
-                                                event.key !== 'Enter' &&
-                                                event.key !== ' '
-                                              ) {
-                                                return
-                                              }
-
-                                              event.preventDefault()
-                                              openLightbox({
-                                                title:
-                                                  m.timeline_generation_step(),
-                                                initialAssetId: output.assetId,
-                                                items: item.outputs.map(
-                                                  (entry, index) => ({
-                                                    assetId: entry.assetId,
-                                                    label: `${m.timeline_output()} ${index + 1}`,
-                                                  }),
-                                                ),
-                                              })
-                                            }}
-                                          >
-                                            <AssetThumb
-                                              asset={asset}
-                                              alt={m.timeline_output()}
-                                            />
-                                            <div className="absolute inset-2 flex items-start justify-end gap-2 opacity-0 transition group-hover:opacity-100">
-                                              <Button
-                                                size="xs"
-                                                variant="secondary"
-                                                onClick={(event) => {
-                                                  event.stopPropagation()
-                                                  onRemixFrom(
-                                                    item,
-                                                    output.assetId,
-                                                  )
-                                                }}
-                                              >
-                                                {m.timeline_action_remix()}
-                                              </Button>
-                                              <Button
-                                                size="xs"
-                                                variant="secondary"
-                                                onClick={(event) => {
-                                                  event.stopPropagation()
-                                                  openEditorForAsset(
-                                                    output.assetId,
-                                                  )
-                                                }}
-                                              >
-                                                {m.timeline_action_edit()}
-                                              </Button>
-                                              <Button
-                                                size="xs"
-                                                variant="secondary"
-                                                onClick={(event) => {
-                                                  event.stopPropagation()
-                                                  void exportSingleAsset(
-                                                    output.assetId,
-                                                  )
-                                                }}
-                                              >
-                                                {m.timeline_action_jpg()}
-                                              </Button>
-                                            </div>
-                                          </div>
-
-                                          {!collapsed ? (
-                                            <div className="space-y-2 p-3">
-                                              <p className="text-muted-foreground text-xs">
-                                                {outputIndex + 1}. {asset.width}
-                                                x{asset.height} ·{' '}
-                                                {asset.mimeType}
-                                              </p>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      )
-                                    })}
-                                  </div>
-                                )}
-
-                                {item.status === 'failed' ? (
-                                  <p className="text-destructive text-xs">
-                                    {m.generation_status_failed()}
-                                  </p>
-                                ) : null}
-
-                                {!collapsed && settings.nerdMode ? (
-                                  <div className="bg-muted/30 rounded-xl p-3 text-xs">
-                                    <p>
-                                      {m.timeline_nerd_step_id({
-                                        id: item.sourceStepId,
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_status({
-                                        status: item.status,
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_references({
-                                        count: String(
-                                          item.input.referenceAssetIds.length,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_personas({
-                                        count: String(
-                                          item.input.personaIds.length,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_requested_outputs({
-                                        count: String(item.input.outputCount),
-                                      })}
-                                    </p>
-                                    {item.trace?.fallbackUsed ? (
-                                      <p>{m.timeline_nerd_fallback_used()}</p>
-                                    ) : null}
-                                    {item.trace?.requestAt ? (
-                                      <p>
-                                        {m.timeline_nerd_request_started({
-                                          date: formatDate(
-                                            item.trace.requestAt,
-                                          ),
-                                        })}
-                                      </p>
-                                    ) : null}
-                                  </div>
-                                ) : null}
-                              </CardContent>
-                            </Card>
+                            <GenerationTimelineCard
+                              item={item}
+                              collapsed={collapsed}
+                              assetsMap={assetsMap}
+                              settings={settings}
+                              onToggleCollapsed={() =>
+                                toggleStepCollapsed(item.id)
+                              }
+                              onDelete={() =>
+                                onRequestDeleteTimelineStep(
+                                  item.sourceStepId,
+                                  m.timeline_generation_step(),
+                                )
+                              }
+                              onRemixFrom={(assetId) =>
+                                onRemixFrom(item, assetId)
+                              }
+                              onEditAsset={openEditorForAsset}
+                              onExportAsset={(assetId) =>
+                                void exportSingleAsset(assetId)
+                              }
+                              openLightbox={openLightbox}
+                            />
                           ) : (
-                            <Card size="sm" className="gap-4">
-                              <CardHeader>
-                                <div className="flex items-center justify-between gap-2">
-                                  <CardTitle className="text-base">
-                                    {m.timeline_edit_step()}
-                                  </CardTitle>
-                                  <div className="flex items-center gap-2">
-                                    <Badge>
-                                      {formatDate(item.step.createdAt)}
-                                    </Badge>
-                                    <Button
-                                      size="xs"
-                                      variant="destructive"
-                                      onClick={() => {
-                                        onRequestDeleteTimelineStep(
-                                          item.step.id,
-                                          m.timeline_edit_step(),
-                                        )
-                                      }}
-                                    >
-                                      {m.timeline_action_delete()}
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        toggleStepCollapsed(item.id)
-                                      }
-                                    >
-                                      {collapsed
-                                        ? m.timeline_expand()
-                                        : m.timeline_collapse()}
-                                    </Button>
-                                  </div>
-                                </div>
-                                {collapsed ? null : (
-                                  <CardDescription>
-                                    {m.timeline_edit_description()}
-                                  </CardDescription>
-                                )}
-                              </CardHeader>
-                              <CardContent className="grid gap-3 md:grid-cols-2">
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium">
-                                    {m.timeline_source()}
-                                  </p>
-                                  {assetsMap.get(item.step.sourceAssetId) ? (
-                                    <button
-                                      type="button"
-                                      className="bg-muted/20 w-full overflow-hidden rounded-xl"
-                                      style={{
-                                        aspectRatio: `${(assetsMap.get(item.step.sourceAssetId) as OutputAsset).width} / ${(assetsMap.get(item.step.sourceAssetId) as OutputAsset).height}`,
-                                      }}
-                                      onClick={() => {
-                                        openLightbox({
-                                          title: m.timeline_edit_step(),
-                                          initialAssetId:
-                                            item.step.sourceAssetId,
-                                          items: [
-                                            {
-                                              assetId: item.step.sourceAssetId,
-                                              label: m.timeline_source(),
-                                            },
-                                          ],
-                                        })
-                                      }}
-                                    >
-                                      <AssetThumb
-                                        asset={
-                                          assetsMap.get(
-                                            item.step.sourceAssetId,
-                                          ) as OutputAsset
-                                        }
-                                        alt={m.timeline_source()}
-                                      />
-                                    </button>
-                                  ) : (
-                                    <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
-                                      {m.timeline_missing_source()}
-                                    </div>
-                                  )}
-                                </div>
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium">
-                                    {m.timeline_output()}
-                                  </p>
-                                  {assetsMap.get(item.step.outputAssetId) ? (
-                                    <button
-                                      type="button"
-                                      className="bg-muted/20 w-full overflow-hidden rounded-xl"
-                                      style={{
-                                        aspectRatio: `${(assetsMap.get(item.step.outputAssetId) as OutputAsset).width} / ${(assetsMap.get(item.step.outputAssetId) as OutputAsset).height}`,
-                                      }}
-                                      onClick={() => {
-                                        openLightbox({
-                                          title: m.timeline_edit_step(),
-                                          initialAssetId:
-                                            item.step.outputAssetId,
-                                          items: [
-                                            {
-                                              assetId: item.step.outputAssetId,
-                                              label: m.timeline_output(),
-                                            },
-                                          ],
-                                        })
-                                      }}
-                                    >
-                                      <AssetThumb
-                                        asset={
-                                          assetsMap.get(
-                                            item.step.outputAssetId,
-                                          ) as OutputAsset
-                                        }
-                                        alt={m.timeline_output()}
-                                      />
-                                    </button>
-                                  ) : (
-                                    <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
-                                      {m.timeline_missing_output()}
-                                    </div>
-                                  )}
-                                  <div className="flex flex-wrap gap-2">
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        onRemixFromAsset(
-                                          item.step.outputAssetId,
-                                        )
-                                      }
-                                    >
-                                      {m.timeline_action_remix()}
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        openEditorForAsset(
-                                          item.step.outputAssetId,
-                                        )
-                                      }
-                                    >
-                                      {m.timeline_action_edit()}
-                                    </Button>
-                                    <Button
-                                      size="xs"
-                                      variant="outline"
-                                      onClick={() =>
-                                        void exportSingleAsset(
-                                          item.step.outputAssetId,
-                                        )
-                                      }
-                                    >
-                                      {m.timeline_export_jpg()}
-                                    </Button>
-                                  </div>
-                                </div>
-                                {!collapsed && settings.nerdMode ? (
-                                  <div className="bg-muted/30 col-span-full rounded-xl p-3 text-xs">
-                                    <p>
-                                      {m.timeline_nerd_step_id({
-                                        id: item.step.id,
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_rotate({
-                                        value: String(
-                                          item.step.operations.rotate,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_brightness({
-                                        value: String(
-                                          item.step.operations.brightness,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_contrast({
-                                        value: String(
-                                          item.step.operations.contrast,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_saturation({
-                                        value: String(
-                                          item.step.operations.saturation,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_blur({
-                                        value: String(
-                                          item.step.operations.blur,
-                                        ),
-                                      })}
-                                    </p>
-                                    <p>
-                                      {m.timeline_nerd_sharpen({
-                                        value: String(
-                                          item.step.operations.sharpen,
-                                        ),
-                                      })}
-                                    </p>
-                                  </div>
-                                ) : null}
-                              </CardContent>
-                            </Card>
+                            <EditTimelineCard
+                              item={item}
+                              collapsed={collapsed}
+                              assetsMap={assetsMap}
+                              settings={settings}
+                              onToggleCollapsed={() =>
+                                toggleStepCollapsed(item.id)
+                              }
+                              onDelete={() =>
+                                onRequestDeleteTimelineStep(
+                                  item.step.id,
+                                  m.timeline_edit_step(),
+                                )
+                              }
+                              onRemixFromAsset={onRemixFromAsset}
+                              onEditAsset={openEditorForAsset}
+                              onExportAsset={(assetId) =>
+                                void exportSingleAsset(assetId)
+                              }
+                              openLightbox={openLightbox}
+                            />
                           )}
                         </li>
                       )
@@ -2177,12 +1538,11 @@ function ProjectWorkshopPage() {
         </div>
       </div>
 
+      {/* ─── Dialogs ─────────────────────────────────────────────── */}
       <AlertDialog
         open={timelineStepPendingDelete !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setTimelineStepPendingDelete(null)
-          }
+          if (!open) setTimelineStepPendingDelete(null)
         }}
       >
         <AlertDialogContent size="default">
@@ -2211,9 +1571,7 @@ function ProjectWorkshopPage() {
       <AlertDialog
         open={projectIdPendingDelete !== null}
         onOpenChange={(open) => {
-          if (!open) {
-            setProjectIdPendingDelete(null)
-          }
+          if (!open) setProjectIdPendingDelete(null)
         }}
       >
         <AlertDialogContent size="default">
@@ -2228,22 +1586,15 @@ function ProjectWorkshopPage() {
             <AlertDialogAction
               variant="destructive"
               onClick={async () => {
-                if (!projectIdPendingDelete) {
-                  return
-                }
-
+                if (!projectIdPendingDelete) return
                 const deletingProjectId = projectIdPendingDelete
                 setProjectIdPendingDelete(null)
                 await removeProjectAndRefresh(deletingProjectId)
-
                 if (deletingProjectId === project.id) {
                   await navigate({ to: '/' })
                   return
                 }
-
-                if (cleanupStateVisible) {
-                  await onLoadCleanup()
-                }
+                if (cleanupStateVisible) await onLoadCleanup()
               }}
             >
               {m.projects_delete()}
@@ -2263,10 +1614,7 @@ function ProjectWorkshopPage() {
           setEditorOperations(DEFAULT_EDITOR_OPS)
         }}
         onApply={async (operations) => {
-          if (!editorSourceAssetId) {
-            return
-          }
-
+          if (!editorSourceAssetId) return
           await createEditStep(editorSourceAssetId, operations)
           setIsEditorOpen(false)
           setEditorSourceAssetId(null)
@@ -2283,21 +1631,21 @@ function ProjectWorkshopPage() {
         onCreatePersona={async (name) => {
           await createPersona(name)
         }}
-        onRenamePersona={async (personaId, name) => {
+        onRenamePersona={async (personaId, name) =>
           await renamePersonaItem(personaId, name)
-        }}
+        }
         onDeletePersona={async (personaId) => {
           setSelectedPersonaIds((current) =>
             current.filter((id) => id !== personaId),
           )
           await removePersona(personaId)
         }}
-        onAddPersonaImages={async (personaId, files) => {
+        onAddPersonaImages={async (personaId, files) =>
           await addPersonaImages(personaId, files)
-        }}
-        onRemovePersonaImage={async (assetId) => {
+        }
+        onRemovePersonaImage={async (assetId) =>
           await removePersonaImage(assetId)
-        }}
+        }
         onToggleSelectedPersona={(personaId) => {
           setSelectedPersonaIds((current) =>
             current.includes(personaId)
@@ -2305,9 +1653,7 @@ function ProjectWorkshopPage() {
               : [...current, personaId],
           )
         }}
-        onOpenLightbox={(context) => {
-          openLightbox(context)
-        }}
+        onOpenLightbox={(context) => openLightbox(context)}
       />
 
       <ImageLightboxModal
@@ -2318,5 +1664,546 @@ function ProjectWorkshopPage() {
         onClose={() => setLightboxContext(null)}
       />
     </main>
+  )
+}
+
+/* ─── Timeline sub-components ──────────────────────────────────────── */
+
+function PromptTimelineCard({
+  item,
+  collapsed,
+  assetsMap,
+  missingReferenceIdsByStep,
+  onToggleCollapsed,
+  onDelete,
+  onReusePrompt,
+  onCopyText,
+}: {
+  item: PromptTimelineItem
+  collapsed: boolean
+  assetsMap: Map<string, OutputAsset>
+  missingReferenceIdsByStep: Map<string, string[]>
+  onToggleCollapsed: () => void
+  onDelete: () => void
+  onReusePrompt: () => void
+  onCopyText: (value: string) => Promise<void>
+}) {
+  return (
+    <Card size="sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">{m.timeline_prompt()}</CardTitle>
+            <Badge variant="outline" className="text-[10px]">
+              {formatDate(item.createdAt)}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="xs" variant="ghost" onClick={onReusePrompt}>
+              {m.timeline_action_reuse_prompt()}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={onDelete}>
+              {m.timeline_action_delete()}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={onToggleCollapsed}>
+              {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="min-w-0 space-y-2.5 overflow-hidden pt-0">
+        {collapsed ? (
+          <p className="text-muted-foreground truncate text-sm">
+            {item.input.prompt}
+          </p>
+        ) : (
+          <>
+            <div className="rounded-lg bg-zinc-900/90 p-3 text-xs text-zinc-100 dark:bg-zinc-800/80">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[10px] tracking-wider text-zinc-400 uppercase">
+                  {m.timeline_prompt()}
+                </p>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  className="h-6 border-zinc-500/40 text-zinc-300 hover:bg-zinc-700/60 hover:text-zinc-100"
+                  onClick={() => void onCopyText(item.input.prompt)}
+                >
+                  {m.timeline_action_copy_prompt()}
+                </Button>
+              </div>
+              <p className="mt-1.5 leading-relaxed whitespace-pre-wrap">
+                {item.input.prompt}
+              </p>
+            </div>
+
+            {item.input.negativePrompt ? (
+              <div className="rounded-lg bg-zinc-100 p-3 text-xs text-zinc-800 ring-1 ring-zinc-200 dark:bg-zinc-800/40 dark:text-zinc-200 dark:ring-zinc-700">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[10px] tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                    {m.timeline_negative_prompt()}
+                  </p>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    className="h-6"
+                    onClick={() =>
+                      void onCopyText(item.input.negativePrompt ?? '')
+                    }
+                  >
+                    {m.timeline_action_copy_negative_prompt()}
+                  </Button>
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap">
+                  {item.input.negativePrompt}
+                </p>
+              </div>
+            ) : null}
+
+            <p className="text-muted-foreground text-xs">
+              {m.timeline_model_line({
+                model: item.input.modelId,
+                resolution: item.input.resolutionPreset,
+                ratio: item.input.aspectRatio,
+              })}
+            </p>
+
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <span className="text-muted-foreground text-xs">
+                {m.timeline_references_label()}:
+              </span>
+              {item.input.referenceAssetIds.length === 0 ? (
+                <Badge variant="outline">{m.timeline_references_none()}</Badge>
+              ) : (
+                item.input.referenceAssetIds.map((assetId) => {
+                  const missingReferences = missingReferenceIdsByStep.get(
+                    item.id,
+                  )
+                  const isDeleted = missingReferences
+                    ? missingReferences.includes(assetId)
+                    : !assetsMap.has(assetId)
+                  return (
+                    <Badge
+                      key={assetId}
+                      variant={isDeleted ? 'destructive' : 'outline'}
+                    >
+                      {isDeleted
+                        ? m.references_deleted_badge()
+                        : assetId.slice(0, 8)}
+                    </Badge>
+                  )
+                })
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function GenerationTimelineCard({
+  item,
+  collapsed,
+  assetsMap,
+  settings,
+  onToggleCollapsed,
+  onDelete,
+  onRemixFrom,
+  onEditAsset,
+  onExportAsset,
+  openLightbox,
+}: {
+  item: GenerationTimelineItem
+  collapsed: boolean
+  assetsMap: Map<string, OutputAsset>
+  settings: { nerdMode: boolean }
+  onToggleCollapsed: () => void
+  onDelete: () => void
+  onRemixFrom: (assetId: string) => void
+  onEditAsset: (assetId: string) => void
+  onExportAsset: (assetId: string) => void
+  openLightbox: (context: LightboxContext) => void
+}) {
+  return (
+    <Card size="sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">
+              {m.timeline_generation_step()}
+            </CardTitle>
+            {item.trace?.fallbackUsed ? (
+              <Badge variant="outline">{m.timeline_fallback_badge()}</Badge>
+            ) : null}
+            {item.status === 'pending' ? (
+              <Badge variant="outline" className="animate-pulse">
+                {m.generation_button_busy()}
+              </Badge>
+            ) : null}
+            <Badge variant="outline" className="text-[10px]">
+              {formatDate(item.createdAt)}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="xs" variant="ghost" onClick={onDelete}>
+              {m.timeline_action_delete()}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={onToggleCollapsed}>
+              {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+            </Button>
+          </div>
+        </div>
+        {!collapsed ? (
+          <p className="text-muted-foreground text-xs">
+            {m.timeline_model_line({
+              model: item.input.modelId,
+              resolution: item.input.resolutionPreset,
+              ratio: item.input.aspectRatio,
+            })}
+          </p>
+        ) : null}
+      </CardHeader>
+      <CardContent className="min-w-0 space-y-3 overflow-hidden pt-0">
+        {item.status === 'pending' ? (
+          <div
+            className={`grid gap-3 ${
+              item.input.outputCount <= 1
+                ? 'grid-cols-1'
+                : item.input.outputCount === 2
+                  ? 'md:grid-cols-2'
+                  : 'md:grid-cols-2 xl:grid-cols-3'
+            }`}
+          >
+            {Array.from({
+              length: Math.max(1, item.input.outputCount),
+            }).map((_, index) => (
+              <div
+                key={`${item.id}:skeleton:${index}`}
+                className="overflow-hidden rounded-xl border p-1.5"
+              >
+                <div className="bg-muted h-44 animate-pulse rounded-lg" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            className={`grid gap-3 ${
+              item.outputs.length <= 1
+                ? 'grid-cols-1'
+                : item.outputs.length === 2
+                  ? 'md:grid-cols-2'
+                  : 'md:grid-cols-2 xl:grid-cols-3'
+            }`}
+          >
+            {item.outputs.map((output, outputIndex) => {
+              const asset = assetsMap.get(output.assetId)
+              if (!asset) return null
+
+              return (
+                <div
+                  key={output.assetId}
+                  className="group border-border/50 overflow-hidden rounded-xl border transition-shadow hover:shadow-md"
+                >
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className="bg-muted/10 relative w-full cursor-zoom-in overflow-hidden"
+                    style={{
+                      aspectRatio: `${asset.width} / ${asset.height}`,
+                    }}
+                    onClick={() => {
+                      openLightbox({
+                        title: m.timeline_generation_step(),
+                        initialAssetId: output.assetId,
+                        items: item.outputs.map((entry, index) => ({
+                          assetId: entry.assetId,
+                          label: `${m.timeline_output()} ${index + 1}`,
+                        })),
+                      })
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return
+                      event.preventDefault()
+                      openLightbox({
+                        title: m.timeline_generation_step(),
+                        initialAssetId: output.assetId,
+                        items: item.outputs.map((entry, index) => ({
+                          assetId: entry.assetId,
+                          label: `${m.timeline_output()} ${index + 1}`,
+                        })),
+                      })
+                    }}
+                  >
+                    <AssetThumb asset={asset} alt={m.timeline_output()} />
+                    <div className="absolute inset-0 flex items-start justify-end gap-1 bg-gradient-to-t from-black/20 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        className="shadow-sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onRemixFrom(output.assetId)
+                        }}
+                      >
+                        {m.timeline_action_remix()}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        className="shadow-sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onEditAsset(output.assetId)
+                        }}
+                      >
+                        {m.timeline_action_edit()}
+                      </Button>
+                      <Button
+                        size="xs"
+                        variant="secondary"
+                        className="shadow-sm"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          onExportAsset(output.assetId)
+                        }}
+                      >
+                        {m.timeline_action_jpg()}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {!collapsed ? (
+                    <div className="px-3 py-2">
+                      <p className="text-muted-foreground text-[11px]">
+                        {outputIndex + 1}. {asset.width}x{asset.height} &middot;{' '}
+                        {asset.mimeType}
+                      </p>
+                    </div>
+                  ) : null}
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {item.status === 'failed' ? (
+          <p className="text-destructive rounded-lg bg-red-50 p-2 text-xs dark:bg-red-950/30">
+            {m.generation_status_failed()}
+          </p>
+        ) : null}
+
+        {!collapsed && settings.nerdMode ? (
+          <div className="bg-muted/30 rounded-lg p-3 font-mono text-[11px] leading-relaxed">
+            <p>{m.timeline_nerd_step_id({ id: item.sourceStepId })}</p>
+            <p>{m.timeline_nerd_status({ status: item.status })}</p>
+            <p>
+              {m.timeline_nerd_references({
+                count: String(item.input.referenceAssetIds.length),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_personas({
+                count: String(item.input.personaIds.length),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_requested_outputs({
+                count: String(item.input.outputCount),
+              })}
+            </p>
+            {item.trace?.fallbackUsed ? (
+              <p>{m.timeline_nerd_fallback_used()}</p>
+            ) : null}
+            {item.trace?.requestAt ? (
+              <p>
+                {m.timeline_nerd_request_started({
+                  date: formatDate(item.trace.requestAt),
+                })}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  )
+}
+
+function EditTimelineCard({
+  item,
+  collapsed,
+  assetsMap,
+  settings,
+  onToggleCollapsed,
+  onDelete,
+  onRemixFromAsset,
+  onEditAsset,
+  onExportAsset,
+  openLightbox,
+}: {
+  item: EditTimelineItem
+  collapsed: boolean
+  assetsMap: Map<string, OutputAsset>
+  settings: { nerdMode: boolean }
+  onToggleCollapsed: () => void
+  onDelete: () => void
+  onRemixFromAsset: (assetId: string) => void
+  onEditAsset: (assetId: string) => void
+  onExportAsset: (assetId: string) => void
+  openLightbox: (context: LightboxContext) => void
+}) {
+  const sourceAsset = assetsMap.get(item.step.sourceAssetId)
+  const outputAsset = assetsMap.get(item.step.outputAssetId)
+
+  return (
+    <Card size="sm">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-sm">{m.timeline_edit_step()}</CardTitle>
+            <Badge variant="outline" className="text-[10px]">
+              {formatDate(item.step.createdAt)}
+            </Badge>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button size="xs" variant="ghost" onClick={onDelete}>
+              {m.timeline_action_delete()}
+            </Button>
+            <Button size="xs" variant="ghost" onClick={onToggleCollapsed}>
+              {collapsed ? m.timeline_expand() : m.timeline_collapse()}
+            </Button>
+          </div>
+        </div>
+        {collapsed ? null : (
+          <CardDescription className="text-xs">
+            {m.timeline_edit_description()}
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent className="grid gap-3 pt-0 md:grid-cols-2">
+        <div className="space-y-1.5">
+          <p className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+            {m.timeline_source()}
+          </p>
+          {sourceAsset ? (
+            <button
+              type="button"
+              className="bg-muted/10 w-full overflow-hidden rounded-xl"
+              style={{
+                aspectRatio: `${sourceAsset.width} / ${sourceAsset.height}`,
+              }}
+              onClick={() => {
+                openLightbox({
+                  title: m.timeline_edit_step(),
+                  initialAssetId: item.step.sourceAssetId,
+                  items: [
+                    {
+                      assetId: item.step.sourceAssetId,
+                      label: m.timeline_source(),
+                    },
+                  ],
+                })
+              }}
+            >
+              <AssetThumb asset={sourceAsset} alt={m.timeline_source()} />
+            </button>
+          ) : (
+            <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
+              {m.timeline_missing_source()}
+            </div>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-muted-foreground text-[10px] font-medium tracking-wider uppercase">
+            {m.timeline_output()}
+          </p>
+          {outputAsset ? (
+            <button
+              type="button"
+              className="bg-muted/10 w-full overflow-hidden rounded-xl"
+              style={{
+                aspectRatio: `${outputAsset.width} / ${outputAsset.height}`,
+              }}
+              onClick={() => {
+                openLightbox({
+                  title: m.timeline_edit_step(),
+                  initialAssetId: item.step.outputAssetId,
+                  items: [
+                    {
+                      assetId: item.step.outputAssetId,
+                      label: m.timeline_output(),
+                    },
+                  ],
+                })
+              }}
+            >
+              <AssetThumb asset={outputAsset} alt={m.timeline_output()} />
+            </button>
+          ) : (
+            <div className="bg-muted text-muted-foreground flex h-40 items-center justify-center rounded-xl text-xs">
+              {m.timeline_missing_output()}
+            </div>
+          )}
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => onRemixFromAsset(item.step.outputAssetId)}
+            >
+              {m.timeline_action_remix()}
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => onEditAsset(item.step.outputAssetId)}
+            >
+              {m.timeline_action_edit()}
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => onExportAsset(item.step.outputAssetId)}
+            >
+              {m.timeline_export_jpg()}
+            </Button>
+          </div>
+        </div>
+        {!collapsed && settings.nerdMode ? (
+          <div className="bg-muted/30 col-span-full rounded-lg p-3 font-mono text-[11px] leading-relaxed">
+            <p>{m.timeline_nerd_step_id({ id: item.step.id })}</p>
+            <p>
+              {m.timeline_nerd_rotate({
+                value: String(item.step.operations.rotate),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_brightness({
+                value: String(item.step.operations.brightness),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_contrast({
+                value: String(item.step.operations.contrast),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_saturation({
+                value: String(item.step.operations.saturation),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_blur({
+                value: String(item.step.operations.blur),
+              })}
+            </p>
+            <p>
+              {m.timeline_nerd_sharpen({
+                value: String(item.step.operations.sharpen),
+              })}
+            </p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   )
 }
