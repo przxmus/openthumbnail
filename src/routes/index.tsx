@@ -11,6 +11,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { Input } from '@/components/ui/input'
 import { useProjects } from '@/lib/hooks/use-projects'
 
@@ -26,6 +36,7 @@ function ProjectsPage() {
 
   const [newProjectName, setNewProjectName] = useState('')
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [projectIdPendingDelete, setProjectIdPendingDelete] = useState<string | null>(null)
 
   const summary = useMemo(() => {
     if (projects.length === 1) {
@@ -79,6 +90,14 @@ function ProjectsPage() {
               placeholder={m.projects_create_placeholder()}
               value={newProjectName}
               onChange={(event) => setNewProjectName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' || pendingId !== null) {
+                  return
+                }
+
+                event.preventDefault()
+                void createProject()
+              }}
             />
             <Button disabled={pendingId !== null} onClick={createProject}>
               {m.projects_create_button()}
@@ -110,7 +129,24 @@ function ProjectsPage() {
 
         <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {projects.map((project) => (
-            <Card key={project.id} size="sm" className="gap-3">
+            <Card
+              key={project.id}
+              size="sm"
+              className="group gap-3 transition hover:border-primary/60"
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                void openProject(project.id)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                  return
+                }
+
+                event.preventDefault()
+                void openProject(project.id)
+              }}
+            >
               <CardHeader>
                 <CardTitle>{project.name}</CardTitle>
                 <CardDescription>{formatDate(project.updatedAt)}</CardDescription>
@@ -130,7 +166,8 @@ function ProjectsPage() {
                 <Button
                   size="sm"
                   disabled={pendingId !== null}
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.stopPropagation()
                     void openProject(project.id)
                   }}
                 >
@@ -140,7 +177,8 @@ function ProjectsPage() {
                   size="sm"
                   variant="outline"
                   disabled={pendingId !== null}
-                  onClick={async () => {
+                  onClick={async (event) => {
+                    event.stopPropagation()
                     setPendingId(project.id)
                     try {
                       const cloned = await duplicate(project.id)
@@ -159,14 +197,9 @@ function ProjectsPage() {
                   size="sm"
                   variant="destructive"
                   disabled={pendingId !== null}
-                  onClick={async () => {
-                    setPendingId(project.id)
-
-                    try {
-                      await remove(project.id)
-                    } finally {
-                      setPendingId(null)
-                    }
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    setProjectIdPendingDelete(project.id)
                   }}
                 >
                   {m.projects_delete()}
@@ -176,6 +209,46 @@ function ProjectsPage() {
           ))}
         </section>
       </div>
+
+      <AlertDialog
+        open={projectIdPendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setProjectIdPendingDelete(null)
+          }
+        }}
+      >
+        <AlertDialogContent size="default">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{m.projects_delete()}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {m.project_delete()}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{m.common_close()}</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={async () => {
+                if (!projectIdPendingDelete) {
+                  return
+                }
+
+                setPendingId(projectIdPendingDelete)
+
+                try {
+                  await remove(projectIdPendingDelete)
+                } finally {
+                  setPendingId(null)
+                  setProjectIdPendingDelete(null)
+                }
+              }}
+            >
+              {m.projects_delete()}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   )
 }
