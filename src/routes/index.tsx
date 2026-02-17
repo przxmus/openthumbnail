@@ -220,10 +220,8 @@ function ProjectsPage() {
       >
         <AlertDialogContent size="default">
           <AlertDialogHeader>
-            <AlertDialogTitle>{m.projects_delete()}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {m.project_delete()}
-            </AlertDialogDescription>
+            <AlertDialogTitle>{m.projects_delete_confirm_title()}</AlertDialogTitle>
+            <AlertDialogDescription>{m.projects_delete_confirm_description()}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{m.common_close()}</AlertDialogCancel>
