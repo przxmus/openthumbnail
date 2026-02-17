@@ -230,6 +230,7 @@ function ProjectWorkshopPage() {
     label: string
   } | null>(null)
   const [hasHydrated, setHasHydrated] = useState(false)
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
   const [undoStack, setUndoStack] = useState<Array<StepUndoEntry>>([])
   const [redoStack, setRedoStack] = useState<Array<StepUndoEntry>>([])
   const [historyBusy, setHistoryBusy] = useState(false)
@@ -827,6 +828,15 @@ function ProjectWorkshopPage() {
         <div className="flex items-center gap-3 px-4 py-2 md:px-8">
           <Button
             size="sm"
+            variant="outline"
+            className="xl:hidden"
+            onClick={() => setMobileSidebarOpen(true)}
+          >
+            {m.generation_title()}
+          </Button>
+
+          <Button
+            size="sm"
             variant="ghost"
             onClick={() => navigate({ to: '/' })}
           >
@@ -869,10 +879,11 @@ function ProjectWorkshopPage() {
             }}
           />
 
-          <div className="flex items-center gap-1.5">
+          <div className="pretty-scroll flex items-center gap-1.5 overflow-x-auto">
             <Button
               size="xs"
               variant="outline"
+              className="shrink-0"
               onClick={() => void exportBackup()}
             >
               {m.project_backup_export()}
@@ -880,6 +891,7 @@ function ProjectWorkshopPage() {
             <Button
               size="xs"
               variant="outline"
+              className="shrink-0"
               onClick={() => backupInputRef.current?.click()}
             >
               {m.project_backup_import()}
@@ -887,6 +899,7 @@ function ProjectWorkshopPage() {
             <Button
               size="xs"
               variant="destructive"
+              className="shrink-0"
               onClick={() => setProjectIdPendingDelete(project.id)}
             >
               {m.project_delete()}
@@ -896,9 +909,33 @@ function ProjectWorkshopPage() {
       </header>
 
       {/* ─── Content: fixed viewport, two independent scroll regions ─ */}
-      <div className="flex min-h-0 flex-1 overflow-hidden">
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {mobileSidebarOpen ? (
+          <button
+            type="button"
+            className="absolute inset-0 z-10 bg-black/45 xl:hidden"
+            aria-label={m.common_close()}
+            onClick={() => setMobileSidebarOpen(false)}
+          />
+        ) : null}
+
         {/* ── Left sidebar ─ independently scrollable ────────────── */}
-        <aside className="pretty-scroll hidden w-[400px] flex-none space-y-3 overflow-y-auto border-r p-4 xl:block">
+        <aside
+          className={`pretty-scroll bg-background absolute inset-y-0 left-0 z-20 w-[min(92vw,400px)] flex-none space-y-3 overflow-y-auto border-r p-4 shadow-xl transition-transform xl:static xl:w-[400px] xl:translate-x-0 xl:shadow-none ${
+            mobileSidebarOpen ? 'translate-x-0' : '-translate-x-[102%]'
+          }`}
+        >
+          <div className="mb-1 flex items-center justify-between xl:hidden">
+            <p className="text-sm font-semibold">{m.generation_title()}</p>
+            <Button
+              size="xs"
+              variant="ghost"
+              onClick={() => setMobileSidebarOpen(false)}
+            >
+              {m.common_close()}
+            </Button>
+          </div>
+
           {/* Generation card */}
           <Card>
             <CardHeader className="pb-2">
@@ -927,7 +964,15 @@ function ProjectWorkshopPage() {
                   </SelectTrigger>
                   <SelectContent>
                     {models.map((model) => (
-                      <SelectItem key={model.id} value={model.id}>
+                      <SelectItem
+                        key={model.id}
+                        value={model.id}
+                        label={`${model.name}${
+                          model.availability === 'unavailable'
+                            ? ` ${m.generation_model_unavailable_suffix()}`
+                            : ''
+                        }`}
+                      >
                         {model.name}
                         {model.availability === 'unavailable'
                           ? ` ${m.generation_model_unavailable_suffix()}`
@@ -961,7 +1006,7 @@ function ProjectWorkshopPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {ASPECT_RATIOS.map((ratio) => (
-                        <SelectItem key={ratio} value={ratio}>
+                        <SelectItem key={ratio} value={ratio} label={ratio}>
                           {ratio}
                         </SelectItem>
                       ))}
@@ -983,8 +1028,12 @@ function ProjectWorkshopPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="720p">720p</SelectItem>
-                      <SelectItem value="1080p">1080p</SelectItem>
+                      <SelectItem value="720p" label="720p">
+                        720p
+                      </SelectItem>
+                      <SelectItem value="1080p" label="1080p">
+                        1080p
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
