@@ -128,9 +128,7 @@ function SettingsPage() {
                 value={settings.themeMode}
                 onValueChange={(value) => {
                   if (value) {
-                    updateSettings({
-                      themeMode: value as 'light' | 'dark' | 'system',
-                    })
+                    updateSettings({ themeMode: value })
                   }
                 }}
               >
@@ -154,7 +152,7 @@ function SettingsPage() {
                 value={settings.locale}
                 onValueChange={(value) => {
                   if (value) {
-                    updateSettings({ locale: value as 'en' | 'pl' })
+                    updateSettings({ locale: value })
                   }
                 }}
               >
